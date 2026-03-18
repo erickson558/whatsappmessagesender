@@ -1,0 +1,72 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Read version
+        id: version
+        shell: pwsh
+        run: |
+          $version = (Get-Content -Raw -Path VERSION).Trim()
+          if (-not $version) {
+            throw "El archivo VERSION esta vacio."
+          }
+          "value=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Ensure tag does not exist yet
+        shell: pwsh
+        run: |
+          git fetch --tags --force
+          $tag = "v${{ steps.version.outputs.value }}"
+          git tag --list $tag | Tee-Object -Variable existing | Out-Null
+          if ($existing) {
+            throw "La version $tag ya existe. Debes incrementar VERSION antes de hacer push a main."
+          }
+
+      - name: Build executable
+        shell: pwsh
+        run: .\build_exe.ps1 -PythonExe python -Clean
+
+      - name: Generate SHA-256
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash .\enviar_whatsapp.exe -Algorithm SHA256).Hash.ToLower()
+          "$hash *enviar_whatsapp.exe" | Out-File -FilePath .\enviar_whatsapp.exe.sha256 -Encoding ascii
+
+      - name: Create GitHub release
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "v${{ steps.version.outputs.value }}"
+          gh release create $tag `
+            .\enviar_whatsapp.exe `
+            .\enviar_whatsapp.exe.sha256 `
+            --title $tag `
+            --target $env:GITHUB_SHA `
+            --generate-notes

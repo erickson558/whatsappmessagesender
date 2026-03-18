@@ -1,0 +1,214 @@
+{
+    "global": {
+        "browser": "Opera",
+        "browser_paths": {
+            "Opera": "C:\\Program Files\\Opera\\opera.exe",
+            "Brave": "C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe",
+            "Chrome": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+            "Edge": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"
+        },
+        "remote_debugging_port": 9222,
+        "debug_port_timeout": 60,
+        "cdp_timeout": 90000,
+        "cdp_retries": 3,
+        "extra_wait": 5,
+        "keepalive_interval_sec": 60,
+        "relaunch_on_disconnect": true,
+        "user_data_dir": "whats_profile",
+        "browser_extra_args": [],
+        "opera_extra_args": [],
+        "num_messages_group1": 4,
+        "num_messages_group2": 4,
+        "num_messages_group3": 4,
+        "num_messages_group4": 4,
+        "window_geometry": "1250x900",
+        "window_state": "normal",
+        "window_x": null,
+        "window_y": null,
+        "version": "8.0.1"
+    },
+    "messages_group1": [
+        {
+            "contact": "",
+            "message": "",
+            "date": "",
+            "hour": "",
+            "minute": "",
+            "ampm": "",
+            "repeat": "Ninguno",
+            "send": false,
+            "days": []
+        },
+        {
+            "contact": "",
+            "message": "",
+            "date": "",
+            "hour": "",
+            "minute": "",
+            "ampm": "",
+            "repeat": "Ninguno",
+            "send": false,
+            "days": []
+        },
+        {
+            "contact": "",
+            "message": "",
+            "date": "",
+            "hour": "",
+            "minute": "",
+            "ampm": "",
+            "repeat": "Ninguno",
+            "send": false,
+            "days": []
+        },
+        {
+            "contact": "",
+            "message": "",
+            "date": "",
+            "hour": "",
+            "minute": "",
+            "ampm": "",
+            "repeat": "Ninguno",
+            "send": false,
+            "days": []
+        }
+    ],
+    "messages_group2": [
+        {
+            "contact": "",
+            "message": "",
+            "date": "",
+            "hour": "",
+            "minute": "",
+            "ampm": "",
+            "repeat": "Ninguno",
+            "send": false,
+            "days": []
+        },
+        {
+            "contact": "",
+            "message": "",
+            "date": "",
+            "hour": "",
+            "minute": "",
+            "ampm": "",
+            "repeat": "Ninguno",
+            "send": false,
+            "days": []
+        },
+        {
+            "contact": "",
+            "message": "",
+            "date": "",
+            "hour": "",
+            "minute": "",
+            "ampm": "",
+            "repeat": "Ninguno",
+            "send": false,
+            "days": []
+        },
+        {
+            "contact": "",
+            "message": "",
+            "date": "",
+            "hour": "",
+            "minute": "",
+            "ampm": "",
+            "repeat": "Ninguno",
+            "send": false,
+            "days": []
+        }
+    ],
+    "messages_group3": [
+        {
+            "contact": "",
+            "message": "",
+            "date": "",
+            "hour": "",
+            "minute": "",
+            "ampm": "",
+            "repeat": "Ninguno",
+            "send": false,
+            "days": []
+        },
+        {
+            "contact": "",
+            "message": "",
+            "date": "",
+            "hour": "",
+            "minute": "",
+            "ampm": "",
+            "repeat": "Ninguno",
+            "send": false,
+            "days": []
+        },
+        {
+            "contact": "",
+            "message": "",
+            "date": "",
+            "hour": "",
+            "minute": "",
+            "ampm": "",
+            "repeat": "Ninguno",
+            "send": false,
+            "days": []
+        },
+        {
+            "contact": "",
+            "message": "",
+            "date": "",
+            "hour": "",
+            "minute": "",
+            "ampm": "",
+            "repeat": "Ninguno",
+            "send": false,
+            "days": []
+        }
+    ],
+    "messages_group4": [
+        {
+            "contact": "",
+            "message": "",
+            "date": "",
+            "hour": "",
+            "minute": "",
+            "ampm": "",
+            "repeat": "Ninguno",
+            "send": false,
+            "days": []
+        },
+        {
+            "contact": "",
+            "message": "",
+            "date": "",
+            "hour": "",
+            "minute": "",
+            "ampm": "",
+            "repeat": "Ninguno",
+            "send": false,
+            "days": []
+        },
+        {
+            "contact": "",
+            "message": "",
+            "date": "",
+            "hour": "",
+            "minute": "",
+            "ampm": "",
+            "repeat": "Ninguno",
+            "send": false,
+            "days": []
+        },
+        {
+            "contact": "",
+            "message": "",
+            "date": "",
+            "hour": "",
+            "minute": "",
+            "ampm": "",
+            "repeat": "Ninguno",
+            "send": false,
+            "days": []
+        }
+    ]
+}

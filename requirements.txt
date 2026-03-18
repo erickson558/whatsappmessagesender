@@ -1,0 +1,5 @@
+playwright==1.51.0
+requests>=2.31.0,<3
+tkcalendar>=1.6.1,<2
+pyinstaller>=6.11.1,<7
+
