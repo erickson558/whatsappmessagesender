@@ -36,6 +36,8 @@ try {
         Remove-Item ".\enviar_whatsapp.exe" -Force
     }
 
+    $VersionDataArg = "{0};." -f (Join-Path $ProjectRoot "VERSION")
+
     Write-Host "Compilando enviar_whatsapp.exe v$Version ..."
     $pyiArgs = @(
         "-m", "PyInstaller",
@@ -52,7 +54,7 @@ try {
         "--collect-data", "tkcalendar",
         "--hidden-import", "playwright.sync_api",
         "--hidden-import", "playwright._impl._errors",
-        "--add-data", "VERSION;.",
+        "--add-data", $VersionDataArg,
         "enviar_whatsapp.py"
     )
     if ($Clean) {
