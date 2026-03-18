@@ -36,6 +36,11 @@ try {
         Remove-Item ".\enviar_whatsapp.exe" -Force
     }
 
+    $DistPath = $ProjectRoot
+    $WorkPath = Join-Path $ProjectRoot "build"
+    $SpecPath = Join-Path $ProjectRoot "build_artifacts"
+    $IconPath = Join-Path $ProjectRoot "enviar_whatsapp.ico"
+    $EntryScript = Join-Path $ProjectRoot "enviar_whatsapp.py"
     $VersionDataArg = "{0};." -f (Join-Path $ProjectRoot "VERSION")
 
     Write-Host "Compilando enviar_whatsapp.exe v$Version ..."
@@ -45,17 +50,17 @@ try {
         "--onefile",
         "--windowed",
         "--name", "enviar_whatsapp",
-        "--distpath", ".",
-        "--workpath", "build",
-        "--specpath", "build_artifacts",
-        "--icon", "enviar_whatsapp.ico",
+        "--distpath", $DistPath,
+        "--workpath", $WorkPath,
+        "--specpath", $SpecPath,
+        "--icon", $IconPath,
         "--version-file", $VersionFile,
         "--collect-submodules", "playwright",
         "--collect-data", "tkcalendar",
         "--hidden-import", "playwright.sync_api",
         "--hidden-import", "playwright._impl._errors",
         "--add-data", $VersionDataArg,
-        "enviar_whatsapp.py"
+        $EntryScript
     )
     if ($Clean) {
         $pyiArgs = @("-m", "PyInstaller", "--clean") + $pyiArgs[2..($pyiArgs.Length - 1)]

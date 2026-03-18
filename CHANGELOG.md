@@ -1,5 +1,9 @@
 # Changelog
 
+## [v8.0.3] - 2026-03-18
+
+- se convierten a absolutas las rutas de build para `VERSION`, `enviar_whatsapp.ico` y `enviar_whatsapp.py`, dejando estable el release automatico en GitHub Actions
+
 ## [v8.0.2] - 2026-03-18
 
 - se corrige la ruta del archivo `VERSION` en el build de PyInstaller para que el release automatico de GitHub Actions funcione en `main`
