@@ -37,13 +37,17 @@ class MessageGroupWidgets:
 
 class WhatsAppSchedulerApp:
     def __init__(self, config_path: str = "config.json") -> None:
+        # --- Paso 1: cargar configuracion y logger (antes de crear ventana) ---
         self.config_store = ConfigStore(config_path)
         self.logger = LoggingService()
 
+        # --- Paso 2: crear ventana principal OCULTA mientras se muestra el splash ---
         self.root = tk.Tk()
+        self.root.withdraw()  # Ocultar hasta que el splash termine
         self.root.title("Programador de Mensajes WhatsApp")
         self.root.report_callback_exception = self._report_callback_exception
 
+        # Estado inicial de la aplicacion
         self.app_quitting = False
         self.clock_after_id = None
         self.scheduled_after_ids: list[str] = []
@@ -57,30 +61,148 @@ class WhatsAppSchedulerApp:
         self.browser_path_var = tk.StringVar()
 
         global_cfg = self.config_store.data.get("global", {})
-        self.version = str(global_cfg.get("version", "8.0.0"))
+        self.version = str(global_cfg.get("version", "8.1.1"))
 
+        # --- Paso 3: mostrar splash screen ---
+        splash, pb_splash, lbl_splash = self._create_splash()
+
+        def _step(pct: int, msg: str = "") -> None:
+            """Avanza la barra del splash suavemente hasta 'pct' y actualiza el texto."""
+            self._splash_advance(pb_splash, lbl_splash, splash, pct, msg)
+
+        _step(15, "Configurando ventana...")
+
+        # --- Paso 4: configurar geometria de la ventana principal ---
         self._set_window_geometry()
         self.root.minsize(1000, 800)
-
         self.groups: dict[int, MessageGroupWidgets] = {}
+        _step(30, "Construyendo interfaz grafica...")
 
+        # --- Paso 5: construir todos los widgets de la UI (operacion mas pesada) ---
         self._build_ui()
         self.root.protocol("WM_DELETE_WINDOW", lambda: self.root.event_generate("<<ExitRequested>>"))
         self.logger.set_ui_callback(self._append_log_line)
+        _step(65, "Iniciando motor de WhatsApp...")
 
+        # --- Paso 6: crear el backend (arranca hilo del BrowserWorker) ---
         self.backend = WhatsAppBackend(
             settings_provider=self._runtime_settings,
             log_fn=self.log_message,
             status_fn=self.update_status,
             sent_log_fn=self.logger.log_message_sent,
         )
+        _step(85, "Arrancando servicios internos...")
 
+        # --- Paso 7: servicios finales ---
         self._refresh_browser_path_label()
         self.update_status("Aplicacion inicializada")
         self._start_clock()
         # Arrancar el vigilante de hibernacion del sistema (hilo daemon)
         self._start_sleep_watchdog()
+        _step(100, "Listo!")
+
+        # --- Paso 8: cerrar splash y mostrar la ventana principal ---
+        # Pequena pausa para que el usuario vea el 100% antes de que desaparezca
+        splash.after(350, splash.destroy)
+        self.root.after(350, self.root.deiconify)
+
+        # Conectar WhatsApp Web en paralelo (no bloquea la GUI)
         threading.Thread(target=self.backend.bind_whatsapp_tab, daemon=True).start()
+
+    # =========================================================================
+    # SPLASH SCREEN
+    # =========================================================================
+
+    def _create_splash(self) -> tuple:
+        """
+        Crea y muestra la ventana de bienvenida (splash screen) centrada en pantalla.
+        Es un Toplevel sin bordes que aparece mientras la app se inicializa.
+        Retorna (splash_window, progressbar, label_status) para ser controlados
+        desde __init__ a medida que avanzan las etapas de carga.
+        """
+        splash = tk.Toplevel(self.root)
+        splash.overrideredirect(True)          # Sin barra de titulo ni botones
+        splash.attributes("-topmost", True)    # Siempre visible sobre otras ventanas
+
+        W, H = 440, 230
+        sw = splash.winfo_screenwidth()
+        sh = splash.winfo_screenheight()
+        x = sw // 2 - W // 2
+        y = sh // 2 - H // 2
+        splash.geometry(f"{W}x{H}+{x}+{y}")
+        splash.configure(bg="#ffffff")
+
+        # Marco interior con padding
+        frm = tk.Frame(splash, bg="#ffffff")
+        frm.pack(expand=True, fill="both", padx=24, pady=18)
+
+        # Titulo principal (color verde WhatsApp)
+        tk.Label(
+            frm,
+            text="Programador de Mensajes WhatsApp",
+            font=("Helvetica", 13, "bold"),
+            bg="#ffffff",
+            fg="#075e54",
+        ).pack(pady=(4, 2))
+
+        # Subtitulo con numero de version
+        tk.Label(
+            frm,
+            text=f"Version {self.version}",
+            font=("Helvetica", 9),
+            bg="#ffffff",
+            fg="#aaaaaa",
+        ).pack(pady=(0, 10))
+
+        # Barra de progreso determinada (se avanza manualmente)
+        pb = ttk.Progressbar(
+            frm,
+            orient="horizontal",
+            mode="determinate",
+            length=370,
+        )
+        pb.pack(pady=(0, 8))
+
+        # Etiqueta de estado que cambia en cada etapa
+        lbl_status = tk.Label(
+            frm,
+            text="Iniciando...",
+            font=("Helvetica", 9),
+            bg="#ffffff",
+            fg="#555555",
+        )
+        lbl_status.pack()
+
+        # Forzar renderizado inicial antes de continuar
+        splash.update()
+        return splash, pb, lbl_status
+
+    @staticmethod
+    def _splash_advance(
+        pb: ttk.Progressbar,
+        lbl: tk.Label,
+        splash: tk.Toplevel,
+        target_pct: int,
+        msg: str = "",
+    ) -> None:
+        """
+        Anima la barra de progreso del splash desde su valor actual hasta 'target_pct'.
+        Cada paso incrementa 1% con una pausa de 8ms para dar sensacion de suavidad.
+        Al llegar al final actualiza el texto de estado con 'msg'.
+        """
+        current = int(pb["value"])
+        for v in range(current, target_pct + 1):
+            pb["value"] = v
+            # Actualizar el texto solo al llegar al objetivo
+            if v == target_pct and msg:
+                lbl.config(text=msg)
+            try:
+                splash.update_idletasks()
+            except Exception:
+                break
+            time.sleep(0.008)  # 8ms por paso → ~0.6s para 75 pasos
+
+    # =========================================================================
 
     def _report_callback_exception(self, exc, value, tb) -> None:
         if self.app_quitting:

@@ -1,5 +1,9 @@
 # Changelog
 
+## [v8.1.1] - 2026-04-13
+
+- **feat(gui):** agrega splash screen al iniciar la aplicacion con barra de progreso animada que refleja las etapas reales de carga (config → ventana → UI → backend → servicios)
+
 ## [v8.1.0] - 2026-04-13
 
 ### Correcciones de hibernacion del sistema (problema principal)
