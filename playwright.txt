@@ -1,0 +1,23 @@
+te comparto una actualización hice el procedimiento en Playwright te lo dejo acá para que veas que ajustes hay que hacer
+
+import { test, expect } from '@playwright/test';
+
+test('test', async ({ page }) => {
+  await page.goto('https://web.whatsapp.com/');
+  await page.getByRole('img', { name: 'Scan this QR code to link a' }).click({
+    position: {
+      x: 209,
+      y: 62
+    }
+  });
+  await page.goto('https://web.whatsapp.com/');
+  await page.getByText('También').click();
+  await page.getByRole('textbox', { name: 'Cuadro de texto para ingresar' }).getByRole('paragraph').click();
+  await page.getByRole('textbox', { name: 'Cuadro de texto para ingresar' }).fill('Benito Bodoque');
+  await page.getByRole('gridcell', { name: 'Benito Bodoque 8:29 AM' }).locator('div').first().click();
+  await page.getByRole('textbox', { name: 'Escribe a Benito Bodoque.' }).getByRole('paragraph').click();
+  await page.getByRole('textbox', { name: 'Escribe a Benito Bodoque.' }).fill('Que pas');
+  await page.getByRole('textbox', { name: 'Escribe a Benito Bodoque.' }).press('Dead');
+  await page.getByRole('textbox', { name: 'Escribe a Benito Bodoque.' }).fill('Que pasó mi capibara moreno');
+  await page.getByRole('button', { name: 'Enviar' }).click();
+});

@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd \"d:\\\\\\\\OneDrive\\\\\\\\Regional\\\\\\\\1 pendientes para analisis\\\\\\\\proyectospython\\\\\\\\whatsappmessagesender\")",
+      "Bash(wc -l *.py)",
+      "Bash(pyinstaller --version)",
+      "Bash(ls *.ico *.spec)",
+      "Bash(pyinstaller enviar_whatsapp.spec --noconfirm)",
+      "Bash(gh auth:*)"
+    ]
+  }
+}
