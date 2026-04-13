@@ -1,5 +1,12 @@
 # Changelog
 
+## [v8.1.2] - 2026-04-13
+
+- **fix(gui):** corrige NameError critico — `repeat_value` se leia despues de ser usado en la validacion de fecha pasada; movido antes del bloque condicional
+- **fix(browser_worker):** agrega flag `_recovering_from_sleep` para evitar recuperacion post-hibernacion doble cuando el worker y el watchdog de la GUI detectan el salto de tiempo simultaneamente
+- **fix(gui):** `_reschedule_past_due_repeating_messages` itera sobre snapshots (`list(...)`) de la lista y los items para evitar RuntimeError si hilos de fondo modifican la coleccion
+- **fix(gui):** escalonar cierre del splash (350ms) con apertura de la ventana principal (420ms) para evitar parpadeo visual
+
 ## [v8.1.1] - 2026-04-13
 
 - **feat(gui):** agrega splash screen al iniciar la aplicacion con barra de progreso animada que refleja las etapas reales de carga (config → ventana → UI → backend → servicios)

@@ -61,7 +61,7 @@ class WhatsAppSchedulerApp:
         self.browser_path_var = tk.StringVar()
 
         global_cfg = self.config_store.data.get("global", {})
-        self.version = str(global_cfg.get("version", "8.1.1"))
+        self.version = str(global_cfg.get("version", "8.1.2"))
 
         # --- Paso 3: mostrar splash screen ---
         splash, pb_splash, lbl_splash = self._create_splash()
@@ -102,9 +102,11 @@ class WhatsAppSchedulerApp:
         _step(100, "Listo!")
 
         # --- Paso 8: cerrar splash y mostrar la ventana principal ---
-        # Pequena pausa para que el usuario vea el 100% antes de que desaparezca
+        # Destruir el splash primero (350ms) y luego mostrar la ventana principal (420ms)
+        # El escalonamiento garantiza que el splash desaparezca antes de que la GUI aparezca,
+        # evitando parpadeo visual o solapamiento entre ambas ventanas.
         splash.after(350, splash.destroy)
-        self.root.after(350, self.root.deiconify)
+        self.root.after(420, self.root.deiconify)
 
         # Conectar WhatsApp Web en paralelo (no bloquea la GUI)
         threading.Thread(target=self.backend.bind_whatsapp_tab, daemon=True).start()
@@ -751,6 +753,12 @@ class WhatsAppSchedulerApp:
                 self.update_status(f"Error: fecha/hora invalida en mensaje {idx + 1} del {group_name}")
                 return []
 
+            # IMPORTANTE: leer repeat_value y allowed_days ANTES del bloque de fecha
+            # para que esten disponibles tanto en la logica de avance como en el dict final.
+            repeat_value = widgets.repeat_vars[idx].get()
+            repeat_value = repeat_value if repeat_value in REPEAT_OPTIONS else "Ninguno"
+            allowed_days = [day_index for day_index, var in enumerate(widgets.days_vars[idx]) if var.get()]
+
             if scheduled_datetime < now_min:
                 if repeat_value == "Ninguno":
                     # Sin repeticion: un mensaje en el pasado no se puede enviar ya
@@ -769,10 +777,6 @@ class WhatsAppSchedulerApp:
                         f"Mensaje {idx + 1} del {group_name}: fecha pasada con repeticion '{repeat_value}'. "
                         f"Reprogramado para {scheduled_datetime.strftime('%Y-%m-%d %H:%M')}"
                     )
-
-            repeat_value = widgets.repeat_vars[idx].get()
-            repeat_value = repeat_value if repeat_value in REPEAT_OPTIONS else "Ninguno"
-            allowed_days = [day_index for day_index, var in enumerate(widgets.days_vars[idx]) if var.get()]
 
             msgs.append(
                 {
@@ -1058,18 +1062,22 @@ class WhatsAppSchedulerApp:
         Si un mensaje con repeticion tiene su datetime en el pasado, lo adelanta
         al 'ahora + 10 segundos' para que se envie pronto sin perderse.
         Los mensajes sin repeticion NO se reenvian (ya era intencional que no se enviaran).
+        Se itera sobre un snapshot (copia) de la lista para evitar problemas de
+        concurrencia si hilos de fondo modifican dicts durante la iteracion.
         """
         now = datetime.now()
         rescheduled = 0
 
-        for msg in self.scheduled_messages:
+        # Snapshot de la lista: evita RuntimeError si hilos de fondo modifican la lista
+        # mientras iteramos. Los dicts internos se modifican in-place (es intencional).
+        for msg in list(self.scheduled_messages):
             msg_dt = msg.get("datetime")
             if not isinstance(msg_dt, datetime) or msg_dt >= now:
                 continue  # No esta en el pasado, no tocar
 
             if msg.get("is_group"):
                 # Grupo: revisar cada item individualmente
-                for item in msg.get("items", []):
+                for item in list(msg.get("items", [])):
                     repeat = item.get("repeat", "Ninguno")
                     item_dt = item.get("datetime")
                     if repeat != "Ninguno" and isinstance(item_dt, datetime) and item_dt < now:
@@ -1090,9 +1098,9 @@ class WhatsAppSchedulerApp:
                 f"[WAKE] {rescheduled} mensaje(s) con repeticion reprogramados "
                 "para envio inmediato post-hibernacion."
             )
-            # Cancelar los after() previos y reprogramar todos
+            # Cancelar los after() previos y reprogramar todos desde el snapshot
             self._cancel_all_scheduled_messages()
-            for msg in self.scheduled_messages:
+            for msg in list(self.scheduled_messages):
                 self._schedule_message(msg)
 
     def _save_window_placement(self) -> None:

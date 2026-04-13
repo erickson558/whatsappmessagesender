@@ -166,6 +166,12 @@ class BrowserWorker(threading.Thread):
         # Guardamos el tiempo real del ultimo ciclo del worker para detectar saltos.
         self._last_loop_time: float = time.time()
 
+        # --- Proteccion contra recuperacion post-sleep doble ---
+        # El worker (_maybe_keepalive) y el watchdog de la GUI pueden detectar
+        # la hibernacion casi al mismo tiempo. Este flag evita que _post_sleep_recover
+        # se ejecute dos veces en paralelo.
+        self._recovering_from_sleep: bool = False
+
         self._refresh_settings()
 
     def _refresh_settings(self) -> None:
@@ -643,8 +649,16 @@ class BrowserWorker(threading.Thread):
         Usa un timeout extendido (_quick_cdp_check_timeout = 12s) porque el
         navegador puede tardar varios segundos en restaurar su puerto CDP despues
         de que el SO regresa de suspension.
+        Protegida con el flag '_recovering_from_sleep' para evitar que el watchdog
+        de la GUI y el worker disparen la recuperacion de forma simultanea.
         No lanza excepcion: registra el resultado en el log y actualiza el estado.
         """
+        # Evitar recuperacion doble: si ya estamos en recuperacion, ignorar
+        if self._recovering_from_sleep:
+            self.log("[SLEEP-RECOVER] Recuperacion ya en progreso. Ignorando llamada duplicada.")
+            return
+        self._recovering_from_sleep = True
+
         self.log(
             "[SLEEP-RECOVER] Iniciando recuperacion post-hibernacion "
             f"(timeout deteccion CDP: {self._quick_cdp_check_timeout}s)..."
@@ -666,6 +680,9 @@ class BrowserWorker(threading.Thread):
                 self.status("Error de reconexion post-hibernacion. Verifique el navegador.")
         except Exception as error:
             self.log(f"[SLEEP-RECOVER] Error inesperado durante recuperacion: {error}")
+        finally:
+            # Liberar el flag siempre, incluso si hubo excepcion
+            self._recovering_from_sleep = False
 
     def _wait_app_ready(self, total_timeout_ms: int = 90000) -> bool:
         page = self.page
