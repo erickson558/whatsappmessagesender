@@ -78,6 +78,8 @@ class WhatsAppSchedulerApp:
         self._refresh_browser_path_label()
         self.update_status("Aplicacion inicializada")
         self._start_clock()
+        # Arrancar el vigilante de hibernacion del sistema (hilo daemon)
+        self._start_sleep_watchdog()
         threading.Thread(target=self.backend.bind_whatsapp_tab, daemon=True).start()
 
     def _report_callback_exception(self, exc, value, tb) -> None:
@@ -514,11 +516,57 @@ class WhatsAppSchedulerApp:
 
     @staticmethod
     def _add_months(source: datetime, months: int) -> datetime:
+        """Suma 'months' meses a 'source' respetando los limites del mes destino."""
         month = source.month - 1 + months
         year = source.year + month // 12
         month = month % 12 + 1
         day = min(source.day, calendar.monthrange(year, month)[1])
         return datetime(year, month, day, source.hour, source.minute, source.second)
+
+    @staticmethod
+    def _advance_to_next_occurrence(dt: datetime, repeat: str, reference: datetime) -> datetime:
+        """
+        Dado un datetime 'dt' en el pasado, lo avanza al primer momento futuro
+        segun el modo de repeticion indicado. Usado al reprogramar mensajes
+        despues de hibernacion o tras re-abrir la programacion.
+        Si 'repeat' es 'Ninguno', retorna 'dt' sin modificar.
+        """
+        from math import ceil
+
+        if repeat == "Ninguno" or dt > reference:
+            return dt
+
+        if repeat == "Cada minuto":
+            # Calcular cuantos minutos hay que avanzar para quedar en el futuro
+            diff_sec = (reference - dt).total_seconds()
+            minutes_needed = int(ceil(diff_sec / 60)) + 1
+            return dt + timedelta(minutes=minutes_needed)
+
+        elif repeat == "Cada hora":
+            diff_sec = (reference - dt).total_seconds()
+            hours_needed = int(ceil(diff_sec / 3600)) + 1
+            return dt + timedelta(hours=hours_needed)
+
+        elif repeat == "Diariamente":
+            diff_days = (reference.date() - dt.date()).days + 1
+            return dt + timedelta(days=diff_days)
+
+        elif repeat == "Semanalmente":
+            diff_days = (reference.date() - dt.date()).days + 1
+            weeks_needed = int(ceil(diff_days / 7))
+            return dt + timedelta(weeks=max(1, weeks_needed))
+
+        elif repeat == "Mensualmente":
+            # Avanzar mes a mes hasta pasar 'reference'
+            result = dt
+            while result <= reference:
+                month = result.month % 12 + 1
+                year = result.year + (1 if result.month == 12 else 0)
+                day = min(result.day, calendar.monthrange(year, month)[1])
+                result = result.replace(year=year, month=month, day=day)
+            return result
+
+        return dt
 
     def _schedule_message(self, msg: dict) -> None:
         target_dt = msg.get("datetime") if isinstance(msg.get("datetime"), datetime) else datetime.now() + timedelta(seconds=2)
@@ -582,8 +630,23 @@ class WhatsAppSchedulerApp:
                 return []
 
             if scheduled_datetime < now_min:
-                self.update_status(f"Mensaje {idx + 1} del {group_name} esta en el pasado y no se programa")
-                continue
+                if repeat_value == "Ninguno":
+                    # Sin repeticion: un mensaje en el pasado no se puede enviar ya
+                    self.update_status(f"Mensaje {idx + 1} del {group_name} esta en el pasado y no se programa")
+                    continue
+                else:
+                    # Con repeticion: avanzar al proximo ciclo futuro en lugar de descartar
+                    scheduled_datetime = self._advance_to_next_occurrence(
+                        scheduled_datetime, repeat_value, now_min
+                    )
+                    if scheduled_datetime < now_min:
+                        # Fallo el calculo: descartar de todas formas
+                        self.update_status(f"Mensaje {idx + 1} del {group_name} esta en el pasado y no se programa")
+                        continue
+                    self.update_status(
+                        f"Mensaje {idx + 1} del {group_name}: fecha pasada con repeticion '{repeat_value}'. "
+                        f"Reprogramado para {scheduled_datetime.strftime('%Y-%m-%d %H:%M')}"
+                    )
 
             repeat_value = widgets.repeat_vars[idx].get()
             repeat_value = repeat_value if repeat_value in REPEAT_OPTIONS else "Ninguno"
@@ -810,6 +873,7 @@ class WhatsAppSchedulerApp:
         self.update_status("Configuracion guardada")
 
     def _start_clock(self) -> None:
+        """Actualiza el reloj en la GUI cada segundo usando root.after (hilo principal)."""
         def _tick() -> None:
             if self.app_quitting:
                 return
@@ -818,6 +882,96 @@ class WhatsAppSchedulerApp:
             self.clock_after_id = self.root.after(1000, _tick)
 
         _tick()
+
+    def _start_sleep_watchdog(self) -> None:
+        """
+        Inicia un hilo daemon que detecta cuando el sistema regresa de hibernacion.
+        Principio: el hilo duerme 4 segundos en un bucle. Si entre dos iteraciones
+        pasaron mas de 30 segundos de reloj real, el SO estuvo suspendido.
+        Al detectarlo, dispara la reconexion del browser y la reprogramacion de
+        mensajes que pudieron haber quedado pendientes durante el sueno.
+        """
+        def _watchdog() -> None:
+            last_check = time.time()
+            while not self.app_quitting:
+                time.sleep(4)  # Intervalo de revision: 4 segundos
+                now = time.time()
+                elapsed = now - last_check
+                last_check = now
+                # Si pasaron mas de 30s (esperabamos ~4s), el sistema durmio
+                if elapsed > 30 and not self.app_quitting:
+                    # Notificar al hilo principal de la GUI de forma segura
+                    self._ui_call(self._on_system_wake, elapsed)
+
+        threading.Thread(target=_watchdog, daemon=True, name="SleepWatchdog").start()
+
+    def _on_system_wake(self, sleep_duration_sec: float) -> None:
+        """
+        Llamado (en el hilo de la GUI) cuando se detecta que el sistema
+        deserto de hibernacion o suspension.
+        Acciones:
+        1. Registrar evento en el log.
+        2. Disparar reconexion forzada del browser en un hilo separado.
+        3. Reprogramar mensajes que quedaron con fecha/hora en el pasado.
+        """
+        self.log_message(
+            f"[WAKE] Sistema desperto tras ~{sleep_duration_sec:.0f}s de suspension. "
+            "Iniciando reconexion del navegador..."
+        )
+        self.update_status("Sistema desperto de hibernacion. Reconectando WhatsApp...")
+
+        # Reconexion del browser en hilo separado para no congelar la GUI
+        threading.Thread(
+            target=self.backend.trigger_post_sleep_recovery,
+            daemon=True,
+            name="PostSleepRecovery",
+        ).start()
+
+        # Reprogramar mensajes pasados que tienen modo de repeticion
+        self._reschedule_past_due_repeating_messages()
+
+    def _reschedule_past_due_repeating_messages(self) -> None:
+        """
+        Tras despertar de hibernacion, revisa los mensajes programados.
+        Si un mensaje con repeticion tiene su datetime en el pasado, lo adelanta
+        al 'ahora + 10 segundos' para que se envie pronto sin perderse.
+        Los mensajes sin repeticion NO se reenvian (ya era intencional que no se enviaran).
+        """
+        now = datetime.now()
+        rescheduled = 0
+
+        for msg in self.scheduled_messages:
+            msg_dt = msg.get("datetime")
+            if not isinstance(msg_dt, datetime) or msg_dt >= now:
+                continue  # No esta en el pasado, no tocar
+
+            if msg.get("is_group"):
+                # Grupo: revisar cada item individualmente
+                for item in msg.get("items", []):
+                    repeat = item.get("repeat", "Ninguno")
+                    item_dt = item.get("datetime")
+                    if repeat != "Ninguno" and isinstance(item_dt, datetime) and item_dt < now:
+                        item["datetime"] = now + timedelta(seconds=10)
+                        rescheduled += 1
+                # Actualizar tambien el datetime del contenedor del grupo
+                if msg.get("items"):
+                    msg["datetime"] = now + timedelta(seconds=10)
+            else:
+                # Mensaje individual con repeticion
+                repeat = msg.get("repeat", "Ninguno")
+                if repeat != "Ninguno":
+                    msg["datetime"] = now + timedelta(seconds=10)
+                    rescheduled += 1
+
+        if rescheduled > 0:
+            self.log_message(
+                f"[WAKE] {rescheduled} mensaje(s) con repeticion reprogramados "
+                "para envio inmediato post-hibernacion."
+            )
+            # Cancelar los after() previos y reprogramar todos
+            self._cancel_all_scheduled_messages()
+            for msg in self.scheduled_messages:
+                self._schedule_message(msg)
 
     def _save_window_placement(self) -> None:
         try:

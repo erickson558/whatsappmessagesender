@@ -139,21 +139,32 @@ class BrowserWorker(threading.Thread):
         self._we_started = False
         self._opened_pages = []
 
+        # --- Configuracion del navegador y conexion CDP ---
         self.browser_choice = "Opera"
         self.browser_paths: Dict[str, str] = {}
         self.remote_port = 9222
-        self.debug_port_timeout = 60
-        self.cdp_timeout = 90000
-        self.cdp_retries = 3
-        self.extra_wait = 5
-        self.keepalive_interval_sec = 60
-        self.relaunch_on_disconnect = True
-        self.user_data_dir = ""
-        self.browser_extra_args: tuple[str, ...] = ()
-        self._last_keepalive_at = 0.0
-        self._launched_pids: set[int] = set()
-        self._active_browser_choice: Optional[str] = None
-        self._shutdown_done = False
+        self.debug_port_timeout = 60        # Segundos que se espera el puerto CDP al lanzar browser
+        self.cdp_timeout = 90000            # Timeout CDP en ms para connect_over_cdp
+        self.cdp_retries = 3                # Reintentos de conexion CDP
+        self.extra_wait = 5                 # Segundos extra tras lanzar el browser antes de conectar
+        self.keepalive_interval_sec = 60    # Intervalo entre pings de keepalive (0 = deshabilitado)
+        self.relaunch_on_disconnect = True  # Relanzar browser si se pierde la conexion
+        self.user_data_dir = ""             # Directorio del perfil del browser
+        self.browser_extra_args: tuple[str, ...] = ()  # Argumentos extra al lanzar el browser
+
+        # --- Estado interno del worker ---
+        self._last_keepalive_at = 0.0       # Timestamp del ultimo keepalive exitoso
+        self._launched_pids: set[int] = set()  # PIDs de procesos que nosotros lanzamos
+        self._active_browser_choice: Optional[str] = None  # Navegador actualmente conectado
+        self._shutdown_done = False         # Flag para evitar shutdown doble
+
+        # --- Timeout rapido para detectar browser ya en ejecucion (segundos) ---
+        # En modo normal: 2s. Se eleva temporalmente a ~12s tras hibernacion.
+        self._quick_cdp_check_timeout: int = 2
+
+        # --- Deteccion de hibernacion del sistema ---
+        # Guardamos el tiempo real del ultimo ciclo del worker para detectar saltos.
+        self._last_loop_time: float = time.time()
 
         self._refresh_settings()
 
@@ -219,35 +230,76 @@ class BrowserWorker(threading.Thread):
         return preferred
 
     def run(self) -> None:
+        """
+        Bucle principal del worker. Lee comandos de la cola y los ejecuta.
+        Cuando la cola esta vacia, ejecuta el keepalive y la deteccion de hibernacion.
+        Se ejecuta en un hilo daemon separado del hilo principal de la GUI.
+        """
+        # Inicializar referencia de tiempo para la deteccion de saltos (hibernacion)
+        self._last_loop_time = time.time()
+
         while not self._stop_event.is_set():
             try:
+                # Esperar un comando en la cola con timeout de 0.2s
                 cmd, kwargs, done, out = self.req_q.get(timeout=0.2)
             except queue.Empty:
+                # Cola vacia: ejecutar keepalive (y deteccion de hibernacion)
                 self._maybe_keepalive()
                 continue
             try:
+                # Ejecutar el comando con recuperacion automatica ante desconexiones
                 out["result"] = self._exec_with_recovery(cmd, kwargs)
             except Exception as error:
                 out["error"] = str(error)
             finally:
+                # Notificar al llamante que el comando termino (exitoso o con error)
                 done.set()
         self._shutdown()
 
     def _maybe_keepalive(self) -> None:
+        """
+        Ejecuta un ping periodico para verificar que la conexion CDP sigue viva.
+        Tambien detecta saltos de tiempo causados por hibernacion del sistema:
+        si entre dos llamadas consecutivas pasaron mas de 30s (cuando solo deberian
+        pasar ~0.2s), asumimos que el sistema durmio y disparamos reconexion forzada.
+        """
         interval = int(self.keepalive_interval_sec)
+        now = time.time()
+
+        # --- Deteccion de hibernacion / suspension del sistema ---
+        # El worker llama a _maybe_keepalive cada ~0.2s (timeout de req_q.get).
+        # Si entre llamadas paso mas de 30s, el SO estuvo suspendido.
+        elapsed_since_last_loop = now - self._last_loop_time
+        self._last_loop_time = now
+
+        if elapsed_since_last_loop > 30 and self._last_loop_time > 0:
+            self.log(
+                f"[SLEEP] Salto de tiempo detectado: {elapsed_since_last_loop:.1f}s "
+                "entre ciclos (esperado ~0.2s). Posible hibernacion del sistema."
+            )
+            self._last_keepalive_at = now  # Reiniciar referencia de keepalive
+            if not self._stop_event.is_set():
+                # Usar timeout extendido para dar tiempo al browser de restaurarse
+                self._quick_cdp_check_timeout = 12
+                self._post_sleep_recover()
+                self._quick_cdp_check_timeout = 2  # Restaurar timeout normal
+            return
+
+        # --- Keepalive normal ---
         if interval <= 0:
             return
-        now = time.time()
         if now - self._last_keepalive_at < interval:
             return
         self._last_keepalive_at = now
 
+        # Si no hay browser ni pagina activa, no hay nada que verificar
         if self.browser is None and self.page is None:
             return
         if self.page is None:
             return
 
         try:
+            # Verificar que el contexto y la pagina siguen vivos evaluando JS simple
             if not self._is_context_alive() or not self._is_page_alive():
                 raise RuntimeError("context/page no disponible")
             self.page.evaluate("() => document.readyState")
@@ -270,17 +322,32 @@ class BrowserWorker(threading.Thread):
         self._stop_event.set()
 
     def _exec_cmd(self, cmd: str, kwargs: Dict[str, object]):
+        """Despacha el comando recibido en la cola al metodo correspondiente."""
         if cmd == "ensure":
+            # Inicializar/verificar conexion con el browser y WhatsApp Web
             return self._ensure_browser()
         if cmd == "bind_whatsapp_tab":
+            # Conectar o encontrar la pestana de WhatsApp Web
             return self._bind_whatsapp_tab()
         if cmd == "open_new_chat":
+            # Abrir el dialogo de nuevo chat en WhatsApp Web
             return self._open_new_chat()
         if cmd == "select_contact":
+            # Buscar y seleccionar un contacto por nombre
             return self._select_contact(str(kwargs["contact"]))
         if cmd == "send_message":
+            # Escribir y enviar el mensaje al contacto activo
             return self._send_message(str(kwargs["text"]), str(kwargs["contact"]))
+        if cmd == "post_sleep_recover":
+            # Recuperacion forzada tras hibernacion del sistema (timeout extendido)
+            self._quick_cdp_check_timeout = 12
+            try:
+                self._post_sleep_recover()
+            finally:
+                self._quick_cdp_check_timeout = 2
+            return True
         if cmd == "shutdown":
+            # Detener el worker y cerrar el browser si lo lanzamos nosotros
             self._stop_event.set()
             self._shutdown(force=True)
             return True
@@ -343,6 +410,13 @@ class BrowserWorker(threading.Thread):
         self._launched_pids = {pid for pid in launched if isinstance(pid, int) and pid > 0}
 
     def _launch_browser_proc(self) -> bool:
+        """
+        Lanza el proceso del navegador con debugging remoto habilitado.
+        IMPORTANTE: Antes de lanzar uno nuevo, verifica si el navegador ya esta
+        corriendo (puede pasar tras hibernacion donde el puerto tarda en responder).
+        Si ya hay instancias del browser, espera con el timeout completo antes de
+        intentar lanzar un proceso nuevo, evitando perder la sesion de WhatsApp.
+        """
         exec_path = str(self.browser_paths.get(self.browser_choice, "")).strip()
         self.browser_exec = exec_path
         if not exec_path:
@@ -352,6 +426,28 @@ class BrowserWorker(threading.Thread):
             self.status(f"La ruta configurada no existe para {self.browser_choice}: {exec_path}")
             return False
 
+        # --- NUEVO: Verificar si el browser ya esta corriendo (post-hibernacion) ---
+        # Si detectamos PIDs activos del browser, esperamos que su puerto CDP
+        # se restaure antes de lanzar una instancia nueva (que usaria otro puerto
+        # o perfil, perdiendo la sesion de WhatsApp).
+        existing_pids = _existing_pids(exec_path)
+        if existing_pids:
+            self.log(
+                f"Se detectaron {len(existing_pids)} instancia(s) de {self.browser_choice} en ejecucion. "
+                f"Esperando restauracion del puerto CDP {self.remote_port} "
+                f"(timeout: {self.debug_port_timeout}s, tipico tras hibernacion)..."
+            )
+            if self._wait_for_debug_port(self.debug_port_timeout):
+                # Puerto restaurado: conectar a la instancia existente en lugar de lanzar nueva
+                self.log(f"Puerto CDP {self.remote_port} restaurado. Reconectando a instancia existente.")
+                return True  # _ensure_browser_connection se encarga del connect_over_cdp
+            # Si aun no responde, continuamos e intentamos lanzar nuevo browser
+            self.log(
+                f"El navegador existente no respondio al puerto CDP en {self.debug_port_timeout}s. "
+                "Se intentara lanzar una nueva instancia."
+            )
+
+        # --- Lanzar nuevo proceso del navegador ---
         launch_port = self._resolve_launch_port()
         self.remote_port = launch_port
         profile_dir = self._resolve_user_data_dir()
@@ -373,6 +469,7 @@ class BrowserWorker(threading.Thread):
             self.log(f"Fallo al iniciar {self.browser_choice}: {error}")
             return False
 
+        # Esperar a que el puerto CDP este disponible con timeout completo
         if not self._wait_for_debug_port(self.debug_port_timeout):
             self._capture_launched_pids(exec_path)
             self.log(
@@ -458,16 +555,24 @@ class BrowserWorker(threading.Thread):
             return False
 
     def _reset_connection_handles(self) -> None:
+        """
+        Libera todos los handles CDP de Playwright (page, context, browser).
+        Se llama antes de reconectar para evitar usar referencias obsoletas.
+        No lanza excepcion aunque alguno de los cierres falle.
+        """
+        # Descartar referencia a la pagina activa (puede estar cerrada/obsoleta)
         try:
             if self.page:
                 self.page = None
         except Exception:
             pass
+        # Descartar el contexto del browser
         try:
             if self.context:
                 self.context = None
         except Exception:
             pass
+        # Intentar cerrar el objeto browser de Playwright (no el proceso)
         try:
             if self.browser:
                 try:
@@ -479,25 +584,38 @@ class BrowserWorker(threading.Thread):
             pass
 
     def _ensure_browser_connection(self) -> bool:
+        """
+        Garantiza que haya una conexion CDP activa con el navegador.
+        1. Si ya hay conexion viva -> retorna True de inmediato.
+        2. Si hay un browser corriendo en el puerto -> conecta via CDP.
+        3. Si no hay browser corriendo -> lo lanza y conecta.
+        El timeout rapido de deteccion ('_quick_cdp_check_timeout') se eleva a
+        12s post-hibernacion para dar tiempo al browser de restaurar el puerto.
+        """
         self._refresh_settings()
 
+        # Detectar cambio de navegador seleccionado por el usuario
         if self._active_browser_choice and self._active_browser_choice != self.browser_choice:
             self.log(
                 f"Cambio de navegador detectado ({self._active_browser_choice} -> {self.browser_choice}). Reiniciando conexion."
             )
             self._reset_connection_handles()
 
+        # Si ya tenemos conexion viva, no hacemos nada
         if self.browser is not None and self._is_context_alive():
             self._active_browser_choice = self.browser_choice
             return True
 
+        # Intentar conectar a un browser ya en ejecucion (quick check configurable)
         attached_to_existing = False
-        if self._wait_for_debug_port(timeout=2):
+        quick_timeout = int(self._quick_cdp_check_timeout)
+        if self._wait_for_debug_port(timeout=quick_timeout):
             attached_to_existing = self._connect_over_cdp()
             if attached_to_existing:
                 self.log(f"Conectado a instancia ya abierta en puerto CDP {self.remote_port}.")
 
         if not attached_to_existing:
+            # Lanzar nuevo browser (internamente verifica si ya hay uno corriendo)
             if not self._launch_browser_proc():
                 return False
             time.sleep(self.extra_wait)
@@ -508,11 +626,46 @@ class BrowserWorker(threading.Thread):
         return True
 
     def _hard_recover(self, reason: str = "") -> bool:
+        """
+        Recuperacion total: resetea todos los handles, reconecta el navegador
+        y vuelve a enlazar la pestana de WhatsApp Web.
+        Se llama cuando se detecta una desconexion CDP (TargetClosedError, etc.).
+        """
         self.log(f"Iniciando recuperacion de navegador. Motivo: {reason or 'desconocido'}")
         self._reset_connection_handles()
         if not self._ensure_browser_connection():
             return False
         return self._bind_whatsapp_tab()
+
+    def _post_sleep_recover(self) -> None:
+        """
+        Recuperacion especial tras detectar que el sistema estuvo en hibernacion.
+        Usa un timeout extendido (_quick_cdp_check_timeout = 12s) porque el
+        navegador puede tardar varios segundos en restaurar su puerto CDP despues
+        de que el SO regresa de suspension.
+        No lanza excepcion: registra el resultado en el log y actualiza el estado.
+        """
+        self.log(
+            "[SLEEP-RECOVER] Iniciando recuperacion post-hibernacion "
+            f"(timeout deteccion CDP: {self._quick_cdp_check_timeout}s)..."
+        )
+        self.status("Sistema despertando de hibernacion. Reconectando navegador...")
+        try:
+            # Forzar cierre de handles obsoletos (la conexion TCP se rompio al hibernar)
+            self._reset_connection_handles()
+            # Reconectar browser y WhatsApp Web
+            if self._ensure_browser_connection():
+                if self._bind_whatsapp_tab():
+                    self.log("[SLEEP-RECOVER] Reconexion post-hibernacion exitosa.")
+                    self.status("Reconexion post-hibernacion exitosa. WhatsApp listo.")
+                else:
+                    self.log("[SLEEP-RECOVER] Browser reconectado, pero WhatsApp no quedo listo (posible QR).")
+                    self.status("Reconexion post-hibernacion: WhatsApp requiere escanear QR.")
+            else:
+                self.log("[SLEEP-RECOVER] No se pudo reconectar el navegador tras hibernacion.")
+                self.status("Error de reconexion post-hibernacion. Verifique el navegador.")
+        except Exception as error:
+            self.log(f"[SLEEP-RECOVER] Error inesperado durante recuperacion: {error}")
 
     def _wait_app_ready(self, total_timeout_ms: int = 90000) -> bool:
         page = self.page
