@@ -169,8 +169,11 @@ class BrowserWorker(threading.Thread):
         # --- Proteccion contra recuperacion post-sleep doble ---
         # El worker (_maybe_keepalive) y el watchdog de la GUI pueden detectar
         # la hibernacion casi al mismo tiempo. Este flag evita que _post_sleep_recover
-        # se ejecute dos veces en paralelo.
+        # se ejecute dos veces en PARALELO.
         self._recovering_from_sleep: bool = False
+        # Cooldown para evitar doble recuperacion SECUENCIAL: si la recuperacion
+        # se ejecuto hace menos de 30s, ignorar la segunda llamada.
+        self._last_sleep_recover_at: float = 0.0
 
         self._refresh_settings()
 
@@ -653,11 +656,18 @@ class BrowserWorker(threading.Thread):
         de la GUI y el worker disparen la recuperacion de forma simultanea.
         No lanza excepcion: registra el resultado en el log y actualiza el estado.
         """
-        # Evitar recuperacion doble: si ya estamos en recuperacion, ignorar
+        # Evitar recuperacion doble en paralelo
         if self._recovering_from_sleep:
             self.log("[SLEEP-RECOVER] Recuperacion ya en progreso. Ignorando llamada duplicada.")
             return
+        # Bug fix V8.1.3: evitar doble recuperacion secuencial (worker + watchdog de GUI
+        # pueden encolar dos llamadas. El flag solo protege paralelo; el cooldown protege secuencial).
+        now = time.time()
+        if now - self._last_sleep_recover_at < 30:
+            self.log("[SLEEP-RECOVER] Recuperacion reciente (<30s). Ignorando llamada redundante.")
+            return
         self._recovering_from_sleep = True
+        self._last_sleep_recover_at = now
 
         self.log(
             "[SLEEP-RECOVER] Iniciando recuperacion post-hibernacion "

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from typing import Callable
 
 from backend.browser_worker import BrowserRuntimeSettings, BrowserWorker
@@ -27,7 +28,10 @@ class WhatsAppBackend:
         sent_log_fn: Callable[[str, str], None],
     ) -> None:
         self._sent_log_fn = sent_log_fn      # Funcion para registrar mensajes enviados en log
-        self._selected_contact = ""           # Contacto actualmente seleccionado
+        self._selected_contact = ""           # Contacto actualmente seleccionado (solo lectura externa)
+        # Serializa el par select_contact+send_message para evitar race condition
+        # cuando multiples hilos programan mensajes simultaneamente (ej. post-hibernacion)
+        self._delivery_lock = threading.Lock()
         # Crear y arrancar el worker (hilo daemon de automatizacion de browser)
         self.worker = BrowserWorker(settings_provider=settings_provider, log_fn=log_fn, status_fn=status_fn)
         self.worker.start()
@@ -66,9 +70,18 @@ class WhatsAppBackend:
         except Exception:
             return False
 
-    def send_message(self, message: str) -> bool:
-        """Envia el mensaje al contacto previamente seleccionado. Registra en log si fue exitoso."""
-        if not self._selected_contact:
+    def send_message(self, message: str, contact: str = "") -> bool:
+        """
+        Envia el mensaje al contacto indicado (o al ultimo seleccionado si no se indica).
+        Registra en log si fue exitoso.
+
+        Nota: siempre pasar 'contact' explicitamente desde _process_scheduled_message
+        para evitar race conditions cuando multiples hilos comparten esta instancia.
+        """
+        # Usar el contacto pasado por parametro; caer en _selected_contact solo como
+        # compatibilidad de emergencia, pero en produccion siempre se debe pasar contact.
+        effective_contact = contact or self._selected_contact
+        if not effective_contact:
             return False
         try:
             sent = bool(
@@ -76,12 +89,12 @@ class WhatsAppBackend:
                     "send_message",
                     timeout=self._TIMEOUT_SEND,
                     text=message,
-                    contact=self._selected_contact,
+                    contact=effective_contact,
                 )
             )
             if sent:
                 # Registrar el mensaje enviado en el log de mensajes
-                self._sent_log_fn(self._selected_contact, message)
+                self._sent_log_fn(effective_contact, message)
             return sent
         except Exception:
             return False

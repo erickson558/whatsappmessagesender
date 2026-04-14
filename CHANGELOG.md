@@ -1,5 +1,15 @@
 # Changelog
 
+## [v8.1.3] - 2026-04-14
+
+### Correcciones de race condition post-hibernacion (mensajes enviados al contacto equivocado)
+
+- **fix(whatsapp_backend):** `send_message` ahora acepta parametro `contact` explicito. Antes dependia de `_selected_contact` (estado compartido), lo que causaba que cuando dos hilos ejecutaban `select_contact`+`send_message` concurrentemente, el segundo hilo sobreescribia `_selected_contact` antes de que el primero llamara `send_message`, enviando el mensaje al contacto incorrecto.
+- **fix(whatsapp_backend):** agrega `_delivery_lock` (threading.Lock) para serializar el par `select_contact`+`send_message`. Impide que dos hilos de entrega ejecuten operaciones de browser simultaneamente.
+- **fix(gui):** `_process_scheduled_message` ahora adquiere `backend._delivery_lock` antes de `select_contact`+`send_message`, y pasa el contacto explicitamente a `send_message` en ambos paths (grupos e individuales).
+- **fix(gui):** `_reschedule_past_due_repeating_messages` solo actualiza el `datetime` del container del grupo si al menos un item interno fue efectivamente reprogramado. Antes siempre se actualizaba si el container tenia datetime en el pasado, causando envios inesperados a contactos cuyos proximos mensajes estaban en el futuro.
+- **fix(browser_worker):** agrega cooldown de 30s en `_post_sleep_recover` para evitar doble recuperacion secuencial. El flag `_recovering_from_sleep` ya protegia ejecucion paralela; el nuevo campo `_last_sleep_recover_at` protege el caso donde el worker y el watchdog de la GUI encolan dos recuperaciones seguidas.
+
 ## [v8.1.2] - 2026-04-13
 
 - **fix(gui):** corrige NameError critico — `repeat_value` se leia despues de ser usado en la validacion de fecha pasada; movido antes del bloque condicional

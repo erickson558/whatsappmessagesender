@@ -61,7 +61,7 @@ class WhatsAppSchedulerApp:
         self.browser_path_var = tk.StringVar()
 
         global_cfg = self.config_store.data.get("global", {})
-        self.version = str(global_cfg.get("version", "8.1.2"))
+        self.version = str(global_cfg.get("version", "8.1.3"))
 
         # --- Paso 3: mostrar splash screen ---
         splash, pb_splash, lbl_splash = self._create_splash()
@@ -889,19 +889,24 @@ class WhatsAppSchedulerApp:
             if not runnable:
                 return
 
-            if not self.backend.select_contact(contact):
-                self._retry_message_delivery(msg, f"No se pudo abrir chat con {contact}")
-                return
+            # Bug fix V8.1.3: adquirir _delivery_lock antes de select+send para serializar
+            # hilos concurrentes y evitar que _selected_contact sea sobreescrito entre llamadas.
+            # El contacto se pasa explicitamente a send_message en lugar de depender del
+            # estado compartido self.backend._selected_contact.
+            with self.backend._delivery_lock:
+                if not self.backend.select_contact(contact):
+                    self._retry_message_delivery(msg, f"No se pudo abrir chat con {contact}")
+                    return
 
-            for item in runnable:
-                if self.backend.send_message(item["message"]):
-                    self.update_status(f"Mensaje enviado a {contact}")
-                    item["last_sent"] = now
-                    self._clear_delivery_retries(item)
-                    self._reprogram_repeat(item)
-                else:
-                    if not self._retry_message_delivery(item, f"Error enviando mensaje a {contact}"):
-                        self.update_status(f"Error enviando mensaje a {contact}")
+                for item in runnable:
+                    if self.backend.send_message(item["message"], contact):
+                        self.update_status(f"Mensaje enviado a {contact}")
+                        item["last_sent"] = now
+                        self._clear_delivery_retries(item)
+                        self._reprogram_repeat(item)
+                    else:
+                        if not self._retry_message_delivery(item, f"Error enviando mensaje a {contact}"):
+                            self.update_status(f"Error enviando mensaje a {contact}")
             return
 
         last_sent = msg.get("last_sent")
@@ -955,18 +960,20 @@ class WhatsAppSchedulerApp:
                 return
 
         contact = msg["contact"]
-        if self.backend.select_contact(contact):
-            if self.backend.send_message(msg["message"]):
-                self.update_status(f"Mensaje enviado a {contact}")
-                msg["last_sent"] = now
-                self._clear_delivery_retries(msg)
-                self._reprogram_repeat(msg)
+        # Bug fix V8.1.3: mismo lock que el path de grupos para serializar select+send.
+        with self.backend._delivery_lock:
+            if self.backend.select_contact(contact):
+                if self.backend.send_message(msg["message"], contact):
+                    self.update_status(f"Mensaje enviado a {contact}")
+                    msg["last_sent"] = now
+                    self._clear_delivery_retries(msg)
+                    self._reprogram_repeat(msg)
+                else:
+                    if not self._retry_message_delivery(msg, f"Error enviando mensaje a {contact}"):
+                        self.update_status(f"Error enviando mensaje a {contact}")
             else:
-                if not self._retry_message_delivery(msg, f"Error enviando mensaje a {contact}"):
-                    self.update_status(f"Error enviando mensaje a {contact}")
-        else:
-            if not self._retry_message_delivery(msg, f"No se pudo abrir chat con {contact}"):
-                self.update_status(f"No se pudo abrir chat con {contact}")
+                if not self._retry_message_delivery(msg, f"No se pudo abrir chat con {contact}"):
+                    self.update_status(f"No se pudo abrir chat con {contact}")
 
     def save_messages_config(self) -> None:
         for group_id in range(1, 5):
@@ -1077,14 +1084,19 @@ class WhatsAppSchedulerApp:
 
             if msg.get("is_group"):
                 # Grupo: revisar cada item individualmente
+                group_rescheduled = 0
                 for item in list(msg.get("items", [])):
                     repeat = item.get("repeat", "Ninguno")
                     item_dt = item.get("datetime")
                     if repeat != "Ninguno" and isinstance(item_dt, datetime) and item_dt < now:
                         item["datetime"] = now + timedelta(seconds=10)
                         rescheduled += 1
-                # Actualizar tambien el datetime del contenedor del grupo
-                if msg.get("items"):
+                        group_rescheduled += 1
+                # Bug fix V8.1.3: solo actualizar el container si al menos un item
+                # fue reprogramado. Antes siempre se actualizaba si el container tenia
+                # datetime en el pasado, lo que causaba envios inesperados post-hibernacion
+                # a contactos cuyos items aun no eran debidos (datetime futuro).
+                if group_rescheduled > 0:
                     msg["datetime"] = now + timedelta(seconds=10)
             else:
                 # Mensaje individual con repeticion
