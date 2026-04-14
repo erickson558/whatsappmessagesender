@@ -61,7 +61,7 @@ class WhatsAppSchedulerApp:
         self.browser_path_var = tk.StringVar()
 
         global_cfg = self.config_store.data.get("global", {})
-        self.version = str(global_cfg.get("version", "8.1.3"))
+        self.version = str(global_cfg.get("version", "8.1.4"))
 
         # --- Paso 3: mostrar splash screen ---
         splash, pb_splash, lbl_splash = self._create_splash()
@@ -693,6 +693,20 @@ class WhatsAppSchedulerApp:
         return dt
 
     def _schedule_message(self, msg: dict) -> None:
+        # Fix V8.1.4: para containers de grupo, sincronizar el datetime del container
+        # al item mas proximo. Sin esto, containers con datetime en el pasado
+        # se disparan en 1s (max(1000, negative_ms)=1000) aunque los items sean futuros,
+        # causando envios prematuros tras hibernacion.
+        if msg.get("is_group") and msg.get("items"):
+            item_dts = [
+                item["datetime"]
+                for item in msg["items"]
+                if isinstance(item.get("datetime"), datetime)
+            ]
+            if item_dts:
+                # Alinear el container con el item mas proximo pendiente
+                msg["datetime"] = min(item_dts)
+
         target_dt = msg.get("datetime") if isinstance(msg.get("datetime"), datetime) else datetime.now() + timedelta(seconds=2)
         delay_ms = max(1000, int((target_dt - datetime.now()).total_seconds() * 1000))
 
@@ -876,6 +890,7 @@ class WhatsAppSchedulerApp:
             for item in items:
                 days = item.get("days") or []
                 if days and datetime.now().weekday() not in days:
+                    # Dia no permitido: reprogramar al proximo dia habilitado
                     delta = 1
                     while (datetime.now() + timedelta(days=delta)).weekday() not in days:
                         delta += 1
@@ -884,7 +899,16 @@ class WhatsAppSchedulerApp:
                     self.update_status(f"Hoy no es dia permitido. Reprogramado para {new_time}")
                     self._schedule_message(item)
                 else:
-                    runnable.append(item)
+                    # Fix V8.1.4: verificar si el item ya es debido (tolerancia 30s).
+                    # Necesario cuando items de un grupo tienen repeat distinto y sus
+                    # datetimes divergen tras _reprogram_repeat. El container se dispara
+                    # al datetime del item mas proximo, pero items futuros no deben enviarse.
+                    item_dt = item.get("datetime")
+                    if isinstance(item_dt, datetime) and item_dt > datetime.now() + timedelta(seconds=30):
+                        # Item aun no es debido: reprogramar standalone para su hora exacta
+                        self._schedule_message(item)
+                    else:
+                        runnable.append(item)
 
             if not runnable:
                 return

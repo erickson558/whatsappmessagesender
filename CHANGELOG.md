@@ -1,5 +1,16 @@
 # Changelog
 
+## [v8.1.4] - 2026-04-14
+
+### Correcciones de estabilidad y robustez
+
+- **fix(config_store):** captura `json.JSONDecodeError` / `OSError` en `_load()` para que un `config.json` corrupto no crashee la aplicacion al iniciar. Se genera un backup `.bak` y se reinicia con valores por defecto.
+- **fix(gui):** `_schedule_message` sincroniza el `datetime` del container de grupo al item mas proximo (`min(item_dts)`). Sin esto, containers con `datetime` en el pasado se disparaban en 1s aunque sus items fueran futuros, causando envios prematuros tras hibernacion.
+- **fix(gui):** `_process_scheduled_message` (path de grupos) filtra items con `datetime > now + 30s` antes de agregarlos a `runnable`. Evita enviar items de un grupo que aun no son debidos cuando el container se dispara por el item mas proximo (grupos con modos de repeticion distintos entre items).
+- **fix(logging_service):** `log_app` captura `_ui_callback` en variable local antes del check `if` para eliminar race condition donde otro hilo podia poner el callback a `None` entre la verificacion y la llamada, causando `TypeError`.
+- **fix(logging_service):** rutas de archivos de log y patron de rotacion ahora usan directorio absoluto (`sys.executable` en modo frozen, `os.getcwd()` en desarrollo). Corrige logs creados en directorio incorrecto cuando el `.exe` se lanza desde un path distinto.
+- **refactor(browser_worker):** eliminado dead code `and self._last_loop_time > 0` en `_maybe_keepalive` (condicion siempre `True` porque `_last_loop_time = now` se asigna en la linea anterior).
+
 ## [v8.1.3] - 2026-04-14
 
 ### Correcciones de race condition post-hibernacion (mensajes enviados al contacto equivocado)

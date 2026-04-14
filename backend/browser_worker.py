@@ -281,7 +281,9 @@ class BrowserWorker(threading.Thread):
         elapsed_since_last_loop = now - self._last_loop_time
         self._last_loop_time = now
 
-        if elapsed_since_last_loop > 30 and self._last_loop_time > 0:
+        # Fix V8.1.4: eliminado 'and self._last_loop_time > 0' (dead code: _last_loop_time
+        # se asigna 'now' en la linea anterior, siempre > 0 al llegar aqui).
+        if elapsed_since_last_loop > 30:
             self.log(
                 f"[SLEEP] Salto de tiempo detectado: {elapsed_since_last_loop:.1f}s "
                 "entre ciclos (esperado ~0.2s). Posible hibernacion del sistema."

@@ -89,13 +89,28 @@ class ConfigStore:
         self.data = self._load()
 
     def _load(self) -> Dict[str, Any]:
+        # Si no existe el archivo de configuracion, se crea uno con los valores por defecto.
         if not os.path.exists(self.path):
             data = copy.deepcopy(self._defaults)
             self._write(data)
             return data
 
-        with open(self.path, "r", encoding="utf-8") as file:
-            loaded = json.load(file)
+        # Fix V8.1.4: capturar errores de parsing para que un config.json
+        # corrupto no crashee la aplicacion al iniciar. Se reinicia con defaults.
+        try:
+            with open(self.path, "r", encoding="utf-8") as file:
+                loaded = json.load(file)
+        except (json.JSONDecodeError, OSError, ValueError):
+            # Configuracion ilegible: crear backup y regenerar con valores por defecto
+            backup_path = self.path + ".bak"
+            try:
+                import shutil
+                shutil.copy2(self.path, backup_path)
+            except Exception:
+                pass
+            data = copy.deepcopy(self._defaults)
+            self._write(data)
+            return data
 
         data = _deep_merge(loaded, copy.deepcopy(self._defaults))
         self._migrate_legacy_browser_paths(data)
