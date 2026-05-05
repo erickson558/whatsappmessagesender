@@ -73,7 +73,7 @@ def _build_default_config() -> Dict[str, Any]:
             "window_state": "normal",
             "window_x": None,
             "window_y": None,
-            "version": "8.0.0",
+            "version": "8.2.0",
         },
         "messages_group1": [_default_message_block() for _ in range(4)],
         "messages_group2": [_default_message_block() for _ in range(4)],

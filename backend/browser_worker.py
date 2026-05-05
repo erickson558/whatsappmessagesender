@@ -493,18 +493,25 @@ class BrowserWorker(threading.Thread):
         self._capture_launched_pids(exec_path)
         return True
 
-    def _connect_over_cdp(self) -> bool:
+    def _connect_over_cdp(self, timeout_ms: Optional[int] = None) -> bool:
+        """
+        Conecta Playwright al browser via CDP.
+        'timeout_ms': timeout en ms por intento; si None usa self.cdp_timeout (default 90s).
+        Pasar un valor menor (ej 30000) permite detectar browsers zombie rapidamente.
+        """
         from playwright.sync_api import sync_playwright
 
         if self.playwright is None:
             self.playwright = sync_playwright().start()
+
+        effective_timeout = timeout_ms if timeout_ms is not None else self.cdp_timeout
 
         self.browser = None
         for attempt in range(self.cdp_retries):
             try:
                 self.browser = self.playwright.chromium.connect_over_cdp(
                     f"http://127.0.0.1:{self.remote_port}",
-                    timeout=self.cdp_timeout,
+                    timeout=effective_timeout,
                 )
                 self.log(f"Conexion CDP establecida (intento {attempt + 1}).")
                 break
@@ -594,11 +601,67 @@ class BrowserWorker(threading.Thread):
         except Exception:
             pass
 
+    def _kill_all_browser_processes(self, exec_path: str = "") -> int:
+        """
+        Mata TODOS los procesos del browser, incluidos zombies post-hibernacion.
+        A diferencia de _kill_process_tree() (solo mata PIDs que lanzamos nosotros),
+        este metodo elimina cualquier instancia del browser por nombre de proceso.
+        Util cuando el browser responde al puerto HTTP pero CDP se cuelga (zombie).
+        Devuelve el numero de PIDs encontrados antes de la eliminacion.
+        """
+        path = exec_path or str(self.browser_exec or "").strip()
+        if not path:
+            return 0
+        pids = _existing_pids(path)
+        if not pids:
+            return 0
+        base = os.path.basename(path).lower()
+        if os.name == "nt":
+            try:
+                # Matar por nombre de imagen: mas confiable que por PID individual
+                subprocess.run(
+                    ["taskkill", "/IM", base, "/T", "/F"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=12,
+                    **_subprocess_no_window_kwargs(),
+                )
+            except Exception:
+                # Fallback: matar cada PID individualmente
+                for pid in sorted(pids, reverse=True):
+                    try:
+                        subprocess.run(
+                            ["taskkill", "/PID", str(pid), "/T", "/F"],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            **_subprocess_no_window_kwargs(),
+                        )
+                    except Exception:
+                        pass
+        else:
+            for pid in sorted(pids, reverse=True):
+                try:
+                    os.kill(pid, 9)
+                except Exception:
+                    pass
+        return len(pids)
+
+    def _wait_port_free(self, timeout_sec: int = 15) -> bool:
+        """Espera hasta que el puerto CDP quede libre (disponible para bind). Util tras kill de zombies."""
+        deadline = time.time() + timeout_sec
+        while time.time() < deadline:
+            if self._is_port_available(self.remote_port):
+                return True
+            time.sleep(1)
+        return False
+
     def _ensure_browser_connection(self) -> bool:
         """
         Garantiza que haya una conexion CDP activa con el navegador.
         1. Si ya hay conexion viva -> retorna True de inmediato.
         2. Si hay un browser corriendo en el puerto -> conecta via CDP.
+           FIX V8.2.0: si el puerto HTTP responde pero CDP falla (browser zombie
+           post-hibernacion), mata todos los procesos zombie antes de relanzar.
         3. Si no hay browser corriendo -> lo lanza y conecta.
         El timeout rapido de deteccion ('_quick_cdp_check_timeout') se eleva a
         12s post-hibernacion para dar tiempo al browser de restaurar el puerto.
@@ -617,13 +680,32 @@ class BrowserWorker(threading.Thread):
             self._active_browser_choice = self.browser_choice
             return True
 
+        # Registrar exec_path para uso en kill de zombies (incluso antes de lanzar)
+        exec_path = str(self.browser_paths.get(self.browser_choice, "")).strip()
+        if exec_path:
+            self.browser_exec = exec_path
+
         # Intentar conectar a un browser ya en ejecucion (quick check configurable)
         attached_to_existing = False
         quick_timeout = int(self._quick_cdp_check_timeout)
-        if self._wait_for_debug_port(timeout=quick_timeout):
-            attached_to_existing = self._connect_over_cdp()
+        port_was_up = self._wait_for_debug_port(timeout=quick_timeout)
+
+        if port_was_up:
+            # Usar timeout reducido (30s) para detectar zombies rapido sin bloquear 270s
+            zombie_check_timeout = min(30000, self.cdp_timeout)
+            attached_to_existing = self._connect_over_cdp(timeout_ms=zombie_check_timeout)
             if attached_to_existing:
                 self.log(f"Conectado a instancia ya abierta en puerto CDP {self.remote_port}.")
+            elif exec_path and _existing_pids(exec_path):
+                # Puerto HTTP responde pero CDP fallo → browser zombie post-hibernacion.
+                # Matar todos los procesos zombie para poder relanzar browser fresco.
+                self.log(
+                    f"[CDP] Puerto {self.remote_port} responde HTTP pero CDP fallo. "
+                    f"Eliminando procesos zombie de {self.browser_choice}..."
+                )
+                killed = self._kill_all_browser_processes(exec_path)
+                self.log(f"[CDP] {killed} proceso(s) zombie eliminados. Esperando que el puerto quede libre...")
+                self._wait_port_free(timeout_sec=15)
 
         if not attached_to_existing:
             # Lanzar nuevo browser (internamente verifica si ya hay uno corriendo)
@@ -651,19 +733,21 @@ class BrowserWorker(threading.Thread):
     def _post_sleep_recover(self) -> None:
         """
         Recuperacion especial tras detectar que el sistema estuvo en hibernacion.
-        Usa un timeout extendido (_quick_cdp_check_timeout = 12s) porque el
-        navegador puede tardar varios segundos en restaurar su puerto CDP despues
-        de que el SO regresa de suspension.
-        Protegida con el flag '_recovering_from_sleep' para evitar que el watchdog
-        de la GUI y el worker disparen la recuperacion de forma simultanea.
-        No lanza excepcion: registra el resultado en el log y actualiza el estado.
+        Estrategia en dos pasos:
+          1. Intentar reconectar directamente (browser puede ya estar listo).
+          2. Si falla y hay procesos zombie (responden HTTP pero no CDP), matarlos y
+             relanzar browser fresco.
+        Protegida con el flag '_recovering_from_sleep' para evitar doble ejecucion
+        en paralelo, y con un cooldown de 30s para evitar reentrada secuencial.
+        FIX V8.2.0: si la recuperacion falla completamente, se resetea el cooldown
+        para que el proximo evento de hibernacion pueda disparar un nuevo intento
+        de inmediato (en lugar de quedar bloqueado por el cooldown).
         """
         # Evitar recuperacion doble en paralelo
         if self._recovering_from_sleep:
             self.log("[SLEEP-RECOVER] Recuperacion ya en progreso. Ignorando llamada duplicada.")
             return
-        # Bug fix V8.1.3: evitar doble recuperacion secuencial (worker + watchdog de GUI
-        # pueden encolar dos llamadas. El flag solo protege paralelo; el cooldown protege secuencial).
+        # Cooldown: evitar doble recuperacion secuencial (worker + watchdog de GUI)
         now = time.time()
         if now - self._last_sleep_recover_at < 30:
             self.log("[SLEEP-RECOVER] Recuperacion reciente (<30s). Ignorando llamada redundante.")
@@ -676,24 +760,56 @@ class BrowserWorker(threading.Thread):
             f"(timeout deteccion CDP: {self._quick_cdp_check_timeout}s)..."
         )
         self.status("Sistema despertando de hibernacion. Reconectando navegador...")
+        recovered = False
         try:
-            # Forzar cierre de handles obsoletos (la conexion TCP se rompio al hibernar)
+            # Paso 1: Forzar cierre de handles obsoletos y reconectar directamente
             self._reset_connection_handles()
-            # Reconectar browser y WhatsApp Web
             if self._ensure_browser_connection():
                 if self._bind_whatsapp_tab():
                     self.log("[SLEEP-RECOVER] Reconexion post-hibernacion exitosa.")
                     self.status("Reconexion post-hibernacion exitosa. WhatsApp listo.")
+                    recovered = True
+                    return
                 else:
                     self.log("[SLEEP-RECOVER] Browser reconectado, pero WhatsApp no quedo listo (posible QR).")
                     self.status("Reconexion post-hibernacion: WhatsApp requiere escanear QR.")
-            else:
-                self.log("[SLEEP-RECOVER] No se pudo reconectar el navegador tras hibernacion.")
-                self.status("Error de reconexion post-hibernacion. Verifique el navegador.")
+                    recovered = True  # Browser OK, el QR es problema del usuario
+                    return
+
+            # Paso 2: La reconexion directa fallo. Intentar kill de zombies + relaunch fresco.
+            exec_path = str(self.browser_exec or self.browser_paths.get(self.browser_choice, "")).strip()
+            if exec_path:
+                zombie_pids = _existing_pids(exec_path)
+                if zombie_pids:
+                    self.log(
+                        f"[SLEEP-RECOVER] Reconexion directa fallida con {len(zombie_pids)} proceso(s) activos. "
+                        "Intentando kill de zombies y relanzamiento..."
+                    )
+                    killed = self._kill_all_browser_processes(exec_path)
+                    self.log(f"[SLEEP-RECOVER] {killed} proceso(s) eliminados. Esperando liberacion del puerto...")
+                    self._wait_port_free(timeout_sec=20)
+                    self._reset_connection_handles()
+                    if self._ensure_browser_connection():
+                        if self._bind_whatsapp_tab():
+                            self.log("[SLEEP-RECOVER] Reconexion post-hibernacion exitosa (tras kill de zombies).")
+                            self.status("Reconexion post-hibernacion exitosa. WhatsApp listo.")
+                            recovered = True
+                            return
+                        else:
+                            self.log("[SLEEP-RECOVER] Browser relanzado, WhatsApp no quedo listo (posible QR).")
+                            self.status("Reconexion post-hibernacion: WhatsApp requiere escanear QR.")
+                            recovered = True
+                            return
+
+            self.log("[SLEEP-RECOVER] No se pudo reconectar el navegador tras hibernacion.")
+            self.status("Error de reconexion post-hibernacion. Verifique el navegador.")
         except Exception as error:
             self.log(f"[SLEEP-RECOVER] Error inesperado durante recuperacion: {error}")
         finally:
-            # Liberar el flag siempre, incluso si hubo excepcion
+            # Si la recuperacion fallo completamente, resetear cooldown para que el
+            # proximo evento de hibernacion pueda disparar un nuevo intento de inmediato.
+            if not recovered:
+                self._last_sleep_recover_at = 0.0
             self._recovering_from_sleep = False
 
     def _wait_app_ready(self, total_timeout_ms: int = 90000) -> bool:

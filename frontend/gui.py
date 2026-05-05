@@ -1,9 +1,10 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import calendar
 import shlex
 import threading
 import time
+import webbrowser
 import tkinter as tk
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -14,12 +15,12 @@ from tkcalendar import DateEntry
 
 from backend.browser_worker import BrowserRuntimeSettings
 from backend.config_store import ConfigStore, SUPPORTED_BROWSERS
+from backend.i18n import Translator, CANONICAL_REPEAT_OPTIONS
 from backend.logging_service import LoggingService
 from backend.whatsapp_backend import WhatsAppBackend
 
-
-DAY_NAMES = ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom"]
-REPEAT_OPTIONS = ["Ninguno", "Cada minuto", "Cada hora", "Diariamente", "Semanalmente", "Mensualmente"]
+# URL del botón de donaciones
+_DONATE_URL = "https://www.paypal.com/donate/?hosted_button_id=ZABFRXC2P3JQN"
 
 
 @dataclass
@@ -41,10 +42,14 @@ class WhatsAppSchedulerApp:
         self.config_store = ConfigStore(config_path)
         self.logger = LoggingService()
 
+        # --- Inicializar traductor con el idioma guardado en config ---
+        lang = str(self.config_store.get_global("language", "es"))
+        self.i18n = Translator(lang)
+
         # --- Paso 2: crear ventana principal OCULTA mientras se muestra el splash ---
         self.root = tk.Tk()
-        self.root.withdraw()  # Ocultar hasta que el splash termine
-        self.root.title("Programador de Mensajes WhatsApp")
+        self.root.withdraw()
+        self.root.title(self.i18n.t("app_title"))
         self.root.report_callback_exception = self._report_callback_exception
 
         # Estado inicial de la aplicacion
@@ -61,28 +66,27 @@ class WhatsAppSchedulerApp:
         self.browser_path_var = tk.StringVar()
 
         global_cfg = self.config_store.data.get("global", {})
-        self.version = str(global_cfg.get("version", "8.1.4"))
+        self.version = str(global_cfg.get("version", "8.2.0"))
 
         # --- Paso 3: mostrar splash screen ---
         splash, pb_splash, lbl_splash = self._create_splash()
 
         def _step(pct: int, msg: str = "") -> None:
-            """Avanza la barra del splash suavemente hasta 'pct' y actualiza el texto."""
             self._splash_advance(pb_splash, lbl_splash, splash, pct, msg)
 
-        _step(15, "Configurando ventana...")
+        _step(15, self.i18n.t("splash_configuring"))
 
         # --- Paso 4: configurar geometria de la ventana principal ---
         self._set_window_geometry()
         self.root.minsize(1000, 800)
         self.groups: dict[int, MessageGroupWidgets] = {}
-        _step(30, "Construyendo interfaz grafica...")
+        _step(30, self.i18n.t("splash_building"))
 
-        # --- Paso 5: construir todos los widgets de la UI (operacion mas pesada) ---
+        # --- Paso 5: construir todos los widgets de la UI ---
         self._build_ui()
         self.root.protocol("WM_DELETE_WINDOW", lambda: self.root.event_generate("<<ExitRequested>>"))
         self.logger.set_ui_callback(self._append_log_line)
-        _step(65, "Iniciando motor de WhatsApp...")
+        _step(65, self.i18n.t("splash_engine"))
 
         # --- Paso 6: crear el backend (arranca hilo del BrowserWorker) ---
         self.backend = WhatsAppBackend(
@@ -91,20 +95,16 @@ class WhatsAppSchedulerApp:
             status_fn=self.update_status,
             sent_log_fn=self.logger.log_message_sent,
         )
-        _step(85, "Arrancando servicios internos...")
+        _step(85, self.i18n.t("splash_services"))
 
         # --- Paso 7: servicios finales ---
         self._refresh_browser_path_label()
-        self.update_status("Aplicacion inicializada")
+        self.update_status(self.i18n.t("status_initialized"))
         self._start_clock()
-        # Arrancar el vigilante de hibernacion del sistema (hilo daemon)
         self._start_sleep_watchdog()
-        _step(100, "Listo!")
+        _step(100, self.i18n.t("splash_ready"))
 
         # --- Paso 8: cerrar splash y mostrar la ventana principal ---
-        # Destruir el splash primero (350ms) y luego mostrar la ventana principal (420ms)
-        # El escalonamiento garantiza que el splash desaparezca antes de que la GUI aparezca,
-        # evitando parpadeo visual o solapamiento entre ambas ventanas.
         splash.after(350, splash.destroy)
         self.root.after(420, self.root.deiconify)
 
@@ -116,15 +116,10 @@ class WhatsAppSchedulerApp:
     # =========================================================================
 
     def _create_splash(self) -> tuple:
-        """
-        Crea y muestra la ventana de bienvenida (splash screen) centrada en pantalla.
-        Es un Toplevel sin bordes que aparece mientras la app se inicializa.
-        Retorna (splash_window, progressbar, label_status) para ser controlados
-        desde __init__ a medida que avanzan las etapas de carga.
-        """
+        """Crea y muestra el splash screen centrado en pantalla."""
         splash = tk.Toplevel(self.root)
-        splash.overrideredirect(True)          # Sin barra de titulo ni botones
-        splash.attributes("-topmost", True)    # Siempre visible sobre otras ventanas
+        splash.overrideredirect(True)
+        splash.attributes("-topmost", True)
 
         W, H = 440, 230
         sw = splash.winfo_screenwidth()
@@ -134,75 +129,47 @@ class WhatsAppSchedulerApp:
         splash.geometry(f"{W}x{H}+{x}+{y}")
         splash.configure(bg="#ffffff")
 
-        # Marco interior con padding
         frm = tk.Frame(splash, bg="#ffffff")
         frm.pack(expand=True, fill="both", padx=24, pady=18)
 
-        # Titulo principal (color verde WhatsApp)
         tk.Label(
             frm,
-            text="Programador de Mensajes WhatsApp",
+            text=self.i18n.t("app_title"),
             font=("Helvetica", 13, "bold"),
             bg="#ffffff",
             fg="#075e54",
         ).pack(pady=(4, 2))
 
-        # Subtitulo con numero de version
         tk.Label(
             frm,
-            text=f"Version {self.version}",
+            text=self.i18n.t("version_label", v=self.version),
             font=("Helvetica", 9),
             bg="#ffffff",
             fg="#aaaaaa",
         ).pack(pady=(0, 10))
 
-        # Barra de progreso determinada (se avanza manualmente)
-        pb = ttk.Progressbar(
-            frm,
-            orient="horizontal",
-            mode="determinate",
-            length=370,
-        )
+        pb = ttk.Progressbar(frm, orient="horizontal", mode="determinate", length=370)
         pb.pack(pady=(0, 8))
 
-        # Etiqueta de estado que cambia en cada etapa
-        lbl_status = tk.Label(
-            frm,
-            text="Iniciando...",
-            font=("Helvetica", 9),
-            bg="#ffffff",
-            fg="#555555",
-        )
+        lbl_status = tk.Label(frm, text="Iniciando...", font=("Helvetica", 9), bg="#ffffff", fg="#555555")
         lbl_status.pack()
 
-        # Forzar renderizado inicial antes de continuar
         splash.update()
         return splash, pb, lbl_status
 
     @staticmethod
-    def _splash_advance(
-        pb: ttk.Progressbar,
-        lbl: tk.Label,
-        splash: tk.Toplevel,
-        target_pct: int,
-        msg: str = "",
-    ) -> None:
-        """
-        Anima la barra de progreso del splash desde su valor actual hasta 'target_pct'.
-        Cada paso incrementa 1% con una pausa de 8ms para dar sensacion de suavidad.
-        Al llegar al final actualiza el texto de estado con 'msg'.
-        """
+    def _splash_advance(pb: ttk.Progressbar, lbl: tk.Label, splash: tk.Toplevel, target_pct: int, msg: str = "") -> None:
+        """Anima la barra de progreso del splash de su valor actual hasta 'target_pct'."""
         current = int(pb["value"])
         for v in range(current, target_pct + 1):
             pb["value"] = v
-            # Actualizar el texto solo al llegar al objetivo
             if v == target_pct and msg:
                 lbl.config(text=msg)
             try:
                 splash.update_idletasks()
             except Exception:
                 break
-            time.sleep(0.008)  # 8ms por paso → ~0.6s para 75 pasos
+            time.sleep(0.008)
 
     # =========================================================================
 
@@ -210,7 +177,6 @@ class WhatsAppSchedulerApp:
         if self.app_quitting:
             return
         import traceback
-
         traceback.print_exception(exc, value, tb)
 
     def _set_window_geometry(self) -> None:
@@ -255,7 +221,6 @@ class WhatsAppSchedulerApp:
                 self.log_text.see(tk.END)
             else:
                 print(line)
-
         self._ui_call(_do)
 
     def log_message(self, message: str) -> None:
@@ -265,7 +230,6 @@ class WhatsAppSchedulerApp:
         def _do() -> None:
             if self.status_label is not None and self.status_label.winfo_exists():
                 self.status_label.config(text=f"Estado: {text}")
-
         self._ui_call(_do)
         self.log_message(text)
 
@@ -296,7 +260,7 @@ class WhatsAppSchedulerApp:
         )
 
     def _build_ui(self) -> None:
-        version_label = tk.Label(self.root, text=f"Version: {self.version}", font=("Helvetica", 10))
+        version_label = tk.Label(self.root, text=self.i18n.t("version_label", v=self.version), font=("Helvetica", 10))
         version_label.pack(side=tk.BOTTOM, pady=2)
 
         self._build_top_controls()
@@ -304,7 +268,7 @@ class WhatsAppSchedulerApp:
         self.clock_label = tk.Label(self.root, font=("Helvetica", 12))
         self.clock_label.pack(side=tk.BOTTOM, pady=5)
 
-        self.status_label = tk.Label(self.root, text="Estado: listo", anchor="w")
+        self.status_label = tk.Label(self.root, text=self.i18n.t("status_ready"), anchor="w")
         self.status_label.pack(fill="x")
 
         mid = tk.Frame(self.root)
@@ -333,15 +297,38 @@ class WhatsAppSchedulerApp:
 
         for group_id in range(1, 5):
             frame = tk.Frame(notebook)
-            notebook.add(frame, text=f"Grupo {group_id}")
+            notebook.add(frame, text=self.i18n.t("group_tab", n=group_id))
             num_messages = int(self.config_store.get_global(f"num_messages_group{group_id}", 4))
             pre_config = self.config_store.get_group_messages(group_id)
             self.groups[group_id] = self._create_message_blocks(frame, num_messages, group_id, pre_config)
 
-        btn_schedule = tk.Button(self.root, text="Programar mensajes", command=self.schedule_all_messages, underline=10)
+        btn_schedule = tk.Button(
+            self.root,
+            text=self.i18n.t("btn_schedule"),
+            command=self.schedule_all_messages,
+            underline=10,
+        )
         btn_schedule.pack(side=tk.TOP, pady=5)
-        btn_exit = tk.Button(self.root, text="Salir", command=lambda: self.root.event_generate("<<ExitRequested>>"), underline=0)
+
+        btn_exit = tk.Button(
+            self.root,
+            text=self.i18n.t("btn_exit"),
+            command=lambda: self.root.event_generate("<<ExitRequested>>"),
+            underline=0,
+        )
         btn_exit.pack(side=tk.TOP, pady=5)
+
+        # Botón de donaciones "Cómprame una cerveza"
+        btn_donate = tk.Button(
+            self.root,
+            text=self.i18n.t("btn_donate") + " \U0001F37A",
+            command=lambda: webbrowser.open(_DONATE_URL),
+            fg="#0070ba",
+            font=("Helvetica", 9),
+            relief=tk.FLAT,
+            cursor="hand2",
+        )
+        btn_donate.pack(side=tk.BOTTOM, pady=(0, 2))
 
         self.root.bind_all("<Alt-r>", lambda _: self._reset_default_paths())
         self.root.bind_all("<Alt-g>", lambda _: self.save_messages_config())
@@ -353,66 +340,88 @@ class WhatsAppSchedulerApp:
         top = tk.Frame(self.root)
         top.pack(side=tk.TOP, fill=tk.X, pady=5)
 
-        tk.Label(top, text="Navegador:").grid(row=0, column=0, padx=5)
-        browser_combo = ttk.Combobox(top, values=list(SUPPORTED_BROWSERS), state="readonly", width=12, textvariable=self.browser_choice_var)
+        tk.Label(top, text=self.i18n.t("lbl_browser")).grid(row=0, column=0, padx=5)
+        browser_combo = ttk.Combobox(
+            top, values=list(SUPPORTED_BROWSERS), state="readonly", width=12,
+            textvariable=self.browser_choice_var,
+        )
         browser_combo.grid(row=0, column=1, padx=5)
         browser_combo.bind("<<ComboboxSelected>>", self._on_browser_select)
 
-        btn_path = tk.Button(top, text="Ruta navegador", command=self._select_browser_path)
+        btn_path = tk.Button(top, text=self.i18n.t("btn_browser_path"), command=self._select_browser_path)
         btn_path.grid(row=0, column=2, padx=5)
 
-        btn_reset = tk.Button(top, text="Restaurar rutas", command=self._reset_default_paths)
+        btn_reset = tk.Button(top, text=self.i18n.t("btn_restore_paths"), command=self._reset_default_paths)
         btn_reset.grid(row=0, column=3, padx=5)
 
-        btn_save = tk.Button(top, text="Guardar configuracion", command=self.save_messages_config)
+        btn_save = tk.Button(top, text=self.i18n.t("btn_save_config"), command=self.save_messages_config)
         btn_save.grid(row=0, column=4, padx=5)
 
+        # Selector de idioma
+        tk.Label(top, text=self.i18n.t("lbl_language")).grid(row=0, column=5, padx=(15, 2))
+        self.lang_var = tk.StringVar(value=self.i18n.lang)
+        lang_combo = ttk.Combobox(
+            top,
+            values=Translator.supported_languages(),
+            state="readonly",
+            width=5,
+            textvariable=self.lang_var,
+        )
+        lang_combo.grid(row=0, column=6, padx=5)
+        lang_combo.bind("<<ComboboxSelected>>", self._on_language_select)
+
         self.browser_path_label = tk.Label(top, textvariable=self.browser_path_var, anchor="w")
-        self.browser_path_label.grid(row=1, column=0, columnspan=5, sticky="we", padx=5, pady=(4, 0))
+        self.browser_path_label.grid(row=1, column=0, columnspan=7, sticky="we", padx=5, pady=(4, 0))
+
+    def _on_language_select(self, _event=None) -> None:
+        """Guarda la seleccion de idioma en config. El cambio aplica al reiniciar la app."""
+        new_lang = self.lang_var.get()
+        self.config_store.set_global("language", new_lang)
+        self.update_status(self.i18n.t("lang_restart_notice"))
 
     def _on_browser_select(self, _event=None) -> None:
         selected = self.browser_choice_var.get()
         self.config_store.set_browser_choice(selected)
         self._refresh_browser_path_label()
-        self.update_status(f"Navegador seleccionado: {selected}")
+        self.update_status(self.i18n.t("status_browser_sel", browser=selected))
 
     def _refresh_browser_path_label(self) -> None:
         browser = self.browser_choice_var.get()
         path = self.config_store.get_browser_path(browser)
-        self.browser_path_var.set(f"Ruta {browser}: {path or '(sin configurar)'}")
+        display_path = path or self.i18n.t("path_not_configured")
+        self.browser_path_var.set(self.i18n.t("browser_path_display", browser=browser, path=display_path))
 
     def _select_browser_path(self) -> None:
         browser = self.browser_choice_var.get()
-        selected = filedialog.askopenfilename(title=f"Seleccionar ejecutable de {browser}", filetypes=[("Executable", "*.exe")])
+        selected = filedialog.askopenfilename(
+            title=f"{self.i18n.t('btn_browser_path')} — {browser}",
+            filetypes=[("Executable", "*.exe")],
+        )
         if not selected:
             return
         self.config_store.set_browser_path(browser, selected)
         self._refresh_browser_path_label()
-        self.update_status(f"Ruta de {browser} actualizada")
+        self.update_status(self.i18n.t("status_path_updated", browser=browser))
 
     def _reset_default_paths(self) -> None:
         self.config_store.reset_default_browser_paths()
         self._refresh_browser_path_label()
-        self.update_status("Rutas de navegadores restauradas a valores por defecto")
+        self.update_status(self.i18n.t("status_paths_restored"))
 
     @staticmethod
     def _safe_date_value(raw_value) -> datetime:
         if isinstance(raw_value, datetime):
             return raw_value
-
         if raw_value is None:
             return datetime.now()
-
         value = str(raw_value).strip()
         if not value:
             return datetime.now()
-
         for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%d/%m/%Y", "%d-%m-%Y"):
             try:
                 return datetime.strptime(value, fmt)
             except ValueError:
                 continue
-
         return datetime.now()
 
     @staticmethod
@@ -494,6 +503,8 @@ class WhatsAppSchedulerApp:
         hours = [str(i) for i in range(1, 13)]
         minutes = [f"{i:02d}" for i in range(60)]
         ampm_options = ["AM", "PM"]
+        repeat_display_options = self.i18n.repeat_options()
+        day_names = self.i18n.days()
 
         for i in range(num_msgs):
             pre = pre_config[i] if pre_config and i < len(pre_config) else {}
@@ -503,24 +514,29 @@ class WhatsAppSchedulerApp:
 
             header = tk.Frame(sub, takefocus=True)
             header.pack(fill="x", padx=5, pady=2)
-            tk.Label(header, text=f"Mensaje {i + 1}", font=("Helvetica", 14), takefocus=True).pack(side="left")
+            tk.Label(
+                header,
+                text=self.i18n.t("msg_block_title", n=i + 1),
+                font=("Helvetica", 14),
+                takefocus=True,
+            ).pack(side="left")
             var_send = tk.BooleanVar(value=bool(pre.get("send", False)))
             send_vars.append(var_send)
-            tk.Checkbutton(header, text="Enviar", variable=var_send, takefocus=True).pack(side="right")
+            tk.Checkbutton(header, text=self.i18n.t("chk_send"), variable=var_send, takefocus=True).pack(side="right")
 
-            tk.Label(sub, text="Contacto:", takefocus=True).pack(anchor="w", padx=5)
+            tk.Label(sub, text=self.i18n.t("lbl_contact"), takefocus=True).pack(anchor="w", padx=5)
             entry_contact = tk.Entry(sub, width=40, takefocus=True)
             entry_contact.insert(0, pre.get("contact", ""))
             entry_contact.pack(padx=5, pady=2)
             entries_contact.append(entry_contact)
 
-            tk.Label(sub, text="Mensaje:", takefocus=True).pack(anchor="w", padx=5)
+            tk.Label(sub, text=self.i18n.t("lbl_message"), takefocus=True).pack(anchor="w", padx=5)
             text_message = tk.Text(sub, height=3, width=50, takefocus=True)
             text_message.insert(tk.END, pre.get("message", ""))
             text_message.pack(padx=5, pady=2)
             entries_message.append(text_message)
 
-            tk.Label(sub, text="Fecha de envio:", takefocus=True).pack(anchor="w", padx=5)
+            tk.Label(sub, text=self.i18n.t("lbl_send_date"), takefocus=True).pack(anchor="w", padx=5)
             date_frame = tk.Frame(sub)
             date_frame.pack(padx=5, pady=2, fill=tk.X)
             date_entry = DateEntry(date_frame, date_pattern="yyyy-mm-dd", takefocus=True)
@@ -530,13 +546,17 @@ class WhatsAppSchedulerApp:
             except Exception:
                 date_entry.set_date(datetime.now())
             date_entry.pack(side=tk.LEFT)
-            tk.Button(date_frame, text="Set hoy", command=lambda de=date_entry: de.set_date(datetime.now())).pack(side=tk.LEFT, padx=5)
+            tk.Button(
+                date_frame,
+                text=self.i18n.t("btn_set_today"),
+                command=lambda de=date_entry: de.set_date(datetime.now()),
+            ).pack(side=tk.LEFT, padx=5)
             entries_date.append(date_entry)
 
             time_frame = tk.Frame(sub, takefocus=True)
             time_frame.pack(padx=5, pady=2, fill=tk.X)
 
-            tk.Label(time_frame, text="Hora:", takefocus=True).grid(row=0, column=0, padx=5)
+            tk.Label(time_frame, text=self.i18n.t("lbl_hour"), takefocus=True).grid(row=0, column=0, padx=5)
             frame_hour = tk.Frame(time_frame)
             frame_hour.grid(row=1, column=0, padx=5)
             lb_hour = tk.Listbox(frame_hour, height=4, exportselection=False, selectbackground="blue", takefocus=True)
@@ -549,7 +569,7 @@ class WhatsAppSchedulerApp:
             listbox_hour.append(lb_hour)
             self._bind_listbox_keyboard(lb_hour)
 
-            tk.Label(time_frame, text="Minuto:", takefocus=True).grid(row=0, column=1, padx=5)
+            tk.Label(time_frame, text=self.i18n.t("lbl_minute"), takefocus=True).grid(row=0, column=1, padx=5)
             frame_min = tk.Frame(time_frame)
             frame_min.grid(row=1, column=1, padx=5)
             lb_min = tk.Listbox(frame_min, height=4, exportselection=False, selectbackground="blue", takefocus=True)
@@ -562,7 +582,7 @@ class WhatsAppSchedulerApp:
             listbox_minute.append(lb_min)
             self._bind_listbox_keyboard(lb_min)
 
-            tk.Label(time_frame, text="AM/PM:", takefocus=True).grid(row=0, column=2, padx=5)
+            tk.Label(time_frame, text=self.i18n.t("lbl_ampm"), takefocus=True).grid(row=0, column=2, padx=5)
             lb_ampm = tk.Listbox(time_frame, height=2, exportselection=False, selectbackground="blue", takefocus=True)
             for ampm in ampm_options:
                 lb_ampm.insert(tk.END, ampm)
@@ -592,24 +612,26 @@ class WhatsAppSchedulerApp:
                 except Exception:
                     pass
 
-            tk.Label(sub, text="Repetir:", takefocus=True).pack(anchor="w", padx=5)
-            combo_repeat = ttk.Combobox(sub, values=REPEAT_OPTIONS, state="readonly", width=15)
-            combo_repeat.set(pre.get("repeat", "Ninguno"))
+            tk.Label(sub, text=self.i18n.t("lbl_repeat"), takefocus=True).pack(anchor="w", padx=5)
+            combo_repeat = ttk.Combobox(sub, values=repeat_display_options, state="readonly", width=15)
+            # Cargar el valor canónico guardado y convertirlo a etiqueta de pantalla
+            canonical_repeat = pre.get("repeat", "Ninguno")
+            combo_repeat.set(self.i18n.canonical_to_display(canonical_repeat))
             combo_repeat.pack(side=tk.LEFT, padx=5, pady=2)
             repeat_vars.append(combo_repeat)
 
             tk.Button(
                 sub,
-                text="Detener repeticion",
+                text=self.i18n.t("btn_stop_repeat"),
                 command=lambda grp=group_id, idx=i, cb=combo_repeat: self.stop_repetition(grp, idx, cb),
             ).pack(side=tk.LEFT, padx=5, pady=2)
 
-            tk.Label(sub, text="Dias:", takefocus=True).pack(anchor="w", padx=5)
+            tk.Label(sub, text=self.i18n.t("lbl_days"), takefocus=True).pack(anchor="w", padx=5)
             days_frame = tk.Frame(sub)
             days_frame.pack(padx=5, pady=2, fill=tk.X)
             current_days_vars: list[tk.BooleanVar] = []
             pre_days = pre.get("days", [])
-            for day_idx, day_name in enumerate(DAY_NAMES):
+            for day_idx, day_name in enumerate(day_names):
                 var = tk.BooleanVar(value=(day_idx in pre_days))
                 tk.Checkbutton(days_frame, text=day_name, variable=var).pack(side=tk.LEFT)
                 current_days_vars.append(var)
@@ -628,7 +650,8 @@ class WhatsAppSchedulerApp:
         )
 
     def stop_repetition(self, group: int, index: int, combobox: ttk.Combobox) -> None:
-        combobox.set("Ninguno")
+        # Mostrar etiqueta traducida de "sin repeticion"
+        combobox.set(self.i18n.canonical_to_display("Ninguno"))
         for msg in self.scheduled_messages:
             if isinstance(msg, dict) and not msg.get("is_group"):
                 if msg.get("group") == group and msg.get("index") == index:
@@ -636,7 +659,7 @@ class WhatsAppSchedulerApp:
             for item in msg.get("items", []):
                 if item.get("group") == group and item.get("index") == index:
                     item["repeat"] = "Ninguno"
-        self.update_status(f"Repeticion detenida para Grupo {group}, bloque {index + 1}")
+        self.update_status(self.i18n.t("status_repeat_stopped", group=group, n=index + 1))
 
     @staticmethod
     def _add_months(source: datetime, months: int) -> datetime:
@@ -651,9 +674,7 @@ class WhatsAppSchedulerApp:
     def _advance_to_next_occurrence(dt: datetime, repeat: str, reference: datetime) -> datetime:
         """
         Dado un datetime 'dt' en el pasado, lo avanza al primer momento futuro
-        segun el modo de repeticion indicado. Usado al reprogramar mensajes
-        despues de hibernacion o tras re-abrir la programacion.
-        Si 'repeat' es 'Ninguno', retorna 'dt' sin modificar.
+        segun el modo de repeticion indicado (valores canonicos en espanol).
         """
         from math import ceil
 
@@ -661,7 +682,6 @@ class WhatsAppSchedulerApp:
             return dt
 
         if repeat == "Cada minuto":
-            # Calcular cuantos minutos hay que avanzar para quedar en el futuro
             diff_sec = (reference - dt).total_seconds()
             minutes_needed = int(ceil(diff_sec / 60)) + 1
             return dt + timedelta(minutes=minutes_needed)
@@ -681,7 +701,6 @@ class WhatsAppSchedulerApp:
             return dt + timedelta(weeks=max(1, weeks_needed))
 
         elif repeat == "Mensualmente":
-            # Avanzar mes a mes hasta pasar 'reference'
             result = dt
             while result <= reference:
                 month = result.month % 12 + 1
@@ -693,10 +712,7 @@ class WhatsAppSchedulerApp:
         return dt
 
     def _schedule_message(self, msg: dict) -> None:
-        # Fix V8.1.4: para containers de grupo, sincronizar el datetime del container
-        # al item mas proximo. Sin esto, containers con datetime en el pasado
-        # se disparan en 1s (max(1000, negative_ms)=1000) aunque los items sean futuros,
-        # causando envios prematuros tras hibernacion.
+        # Para containers de grupo, sincronizar el datetime con el item mas proximo
         if msg.get("is_group") and msg.get("items"):
             item_dts = [
                 item["datetime"]
@@ -704,7 +720,6 @@ class WhatsAppSchedulerApp:
                 if isinstance(item.get("datetime"), datetime)
             ]
             if item_dts:
-                # Alinear el container con el item mas proximo pendiente
                 msg["datetime"] = min(item_dts)
 
         target_dt = msg.get("datetime") if isinstance(msg.get("datetime"), datetime) else datetime.now() + timedelta(seconds=2)
@@ -748,7 +763,7 @@ class WhatsAppSchedulerApp:
             ampm_sel = widgets.listbox_ampm[idx].curselection()
 
             if not hour_sel or not minute_sel or not ampm_sel:
-                self.update_status(f"Error: seleccione hora/minuto/AM-PM para mensaje {idx + 1} del {group_name}")
+                self.update_status(self.i18n.t("status_no_time", n=idx + 1, group=group_name))
                 return []
 
             hour_val = int(widgets.listbox_hour[idx].get(hour_sel[0]))
@@ -764,32 +779,36 @@ class WhatsAppSchedulerApp:
                 scheduled_date = datetime.strptime(date_str, "%Y-%m-%d")
                 scheduled_datetime = scheduled_date.replace(hour=hour_val, minute=minute_val)
             except ValueError:
-                self.update_status(f"Error: fecha/hora invalida en mensaje {idx + 1} del {group_name}")
+                self.update_status(self.i18n.t("status_bad_date", n=idx + 1, group=group_name))
                 return []
 
-            # IMPORTANTE: leer repeat_value y allowed_days ANTES del bloque de fecha
-            # para que esten disponibles tanto en la logica de avance como en el dict final.
-            repeat_value = widgets.repeat_vars[idx].get()
-            repeat_value = repeat_value if repeat_value in REPEAT_OPTIONS else "Ninguno"
+            # Convertir el valor mostrado en el combobox al valor canónico (español) para
+            # guardar internamente. Siempre se compara y almacena en canónico.
+            repeat_display = widgets.repeat_vars[idx].get()
+            repeat_value = self.i18n.display_to_canonical(repeat_display)
+            if repeat_value not in CANONICAL_REPEAT_OPTIONS:
+                repeat_value = "Ninguno"
             allowed_days = [day_index for day_index, var in enumerate(widgets.days_vars[idx]) if var.get()]
 
             if scheduled_datetime < now_min:
                 if repeat_value == "Ninguno":
-                    # Sin repeticion: un mensaje en el pasado no se puede enviar ya
-                    self.update_status(f"Mensaje {idx + 1} del {group_name} esta en el pasado y no se programa")
+                    self.update_status(self.i18n.t("status_past_skip", n=idx + 1, group=group_name))
                     continue
                 else:
-                    # Con repeticion: avanzar al proximo ciclo futuro en lugar de descartar
                     scheduled_datetime = self._advance_to_next_occurrence(
                         scheduled_datetime, repeat_value, now_min
                     )
                     if scheduled_datetime < now_min:
-                        # Fallo el calculo: descartar de todas formas
-                        self.update_status(f"Mensaje {idx + 1} del {group_name} esta en el pasado y no se programa")
+                        self.update_status(self.i18n.t("status_past_skip", n=idx + 1, group=group_name))
                         continue
                     self.update_status(
-                        f"Mensaje {idx + 1} del {group_name}: fecha pasada con repeticion '{repeat_value}'. "
-                        f"Reprogramado para {scheduled_datetime.strftime('%Y-%m-%d %H:%M')}"
+                        self.i18n.t(
+                            "status_past_reschedule",
+                            n=idx + 1,
+                            group=group_name,
+                            repeat=repeat_value,
+                            dt=scheduled_datetime.strftime("%Y-%m-%d %H:%M"),
+                        )
                     )
 
             msgs.append(
@@ -814,7 +833,9 @@ class WhatsAppSchedulerApp:
 
         all_msgs: list[dict] = []
         for group_id in range(1, 5):
-            group_msgs = self._schedule_messages_group(f"Grupo {group_id}", self.groups[group_id], group_id)
+            group_msgs = self._schedule_messages_group(
+                self.i18n.t("group_tab", n=group_id), self.groups[group_id], group_id
+            )
             all_msgs.extend(group_msgs)
 
         grouped: dict[tuple[datetime, str], list[dict]] = {}
@@ -835,7 +856,7 @@ class WhatsAppSchedulerApp:
         for msg in self.scheduled_messages:
             self._schedule_message(msg)
 
-        self.update_status("Mensajes programados")
+        self.update_status(self.i18n.t("status_scheduled"))
 
     def _reprogram_repeat(self, msg: dict) -> None:
         repeat = msg.get("repeat")
@@ -858,12 +879,18 @@ class WhatsAppSchedulerApp:
     def _retry_message_delivery(self, msg: dict, reason: str, delay_seconds: int = 45, max_attempts: int = 20) -> bool:
         retries = int(msg.get("_delivery_retries", 0) or 0)
         if retries >= max_attempts:
-            self.update_status(f"{reason}. Se agotaron reintentos ({max_attempts}).")
+            self.update_status(self.i18n.t("status_exhausted", reason=reason, max=max_attempts))
             return False
         msg["_delivery_retries"] = retries + 1
         msg["datetime"] = datetime.now() + timedelta(seconds=max(5, delay_seconds))
         self.update_status(
-            f"{reason}. Reintento {msg['_delivery_retries']}/{max_attempts} en {max(5, delay_seconds)} segundos."
+            self.i18n.t(
+                "status_retry",
+                reason=reason,
+                n=msg["_delivery_retries"],
+                max=max_attempts,
+                secs=max(5, delay_seconds),
+            )
         )
         self._schedule_message(msg)
         return True
@@ -890,22 +917,16 @@ class WhatsAppSchedulerApp:
             for item in items:
                 days = item.get("days") or []
                 if days and datetime.now().weekday() not in days:
-                    # Dia no permitido: reprogramar al proximo dia habilitado
                     delta = 1
                     while (datetime.now() + timedelta(days=delta)).weekday() not in days:
                         delta += 1
                     new_time = datetime.now() + timedelta(days=delta)
                     item["datetime"] = new_time
-                    self.update_status(f"Hoy no es dia permitido. Reprogramado para {new_time}")
+                    self.update_status(self.i18n.t("status_day_skip", new_time=new_time))
                     self._schedule_message(item)
                 else:
-                    # Fix V8.1.4: verificar si el item ya es debido (tolerancia 30s).
-                    # Necesario cuando items de un grupo tienen repeat distinto y sus
-                    # datetimes divergen tras _reprogram_repeat. El container se dispara
-                    # al datetime del item mas proximo, pero items futuros no deben enviarse.
                     item_dt = item.get("datetime")
                     if isinstance(item_dt, datetime) and item_dt > datetime.now() + timedelta(seconds=30):
-                        # Item aun no es debido: reprogramar standalone para su hora exacta
                         self._schedule_message(item)
                     else:
                         runnable.append(item)
@@ -913,45 +934,34 @@ class WhatsAppSchedulerApp:
             if not runnable:
                 return
 
-            # Bug fix V8.1.3: adquirir _delivery_lock antes de select+send para serializar
-            # hilos concurrentes y evitar que _selected_contact sea sobreescrito entre llamadas.
-            # El contacto se pasa explicitamente a send_message en lugar de depender del
-            # estado compartido self.backend._selected_contact.
             with self.backend._delivery_lock:
                 if not self.backend.select_contact(contact):
-                    self._retry_message_delivery(msg, f"No se pudo abrir chat con {contact}")
+                    self._retry_message_delivery(msg, self.i18n.t("status_chat_fail", contact=contact))
                     return
 
                 for item in runnable:
                     if self.backend.send_message(item["message"], contact):
-                        self.update_status(f"Mensaje enviado a {contact}")
+                        self.update_status(self.i18n.t("status_msg_sent", contact=contact))
                         item["last_sent"] = now
                         self._clear_delivery_retries(item)
                         self._reprogram_repeat(item)
                     else:
-                        if not self._retry_message_delivery(item, f"Error enviando mensaje a {contact}"):
-                            self.update_status(f"Error enviando mensaje a {contact}")
+                        if not self._retry_message_delivery(item, self.i18n.t("status_send_err", contact=contact)):
+                            self.update_status(self.i18n.t("status_send_err", contact=contact))
             return
 
         last_sent = msg.get("last_sent")
         repeat = msg.get("repeat")
 
         if repeat == "Cada minuto" and last_sent and (
-            last_sent.year,
-            last_sent.month,
-            last_sent.day,
-            last_sent.hour,
-            last_sent.minute,
+            last_sent.year, last_sent.month, last_sent.day, last_sent.hour, last_sent.minute,
         ) == (now.year, now.month, now.day, now.hour, now.minute):
             msg["datetime"] = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
             self._schedule_message(msg)
             return
 
         if repeat == "Cada hora" and last_sent and (
-            last_sent.year,
-            last_sent.month,
-            last_sent.day,
-            last_sent.hour,
+            last_sent.year, last_sent.month, last_sent.day, last_sent.hour,
         ) == (now.year, now.month, now.day, now.hour):
             msg["datetime"] = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
             self._schedule_message(msg)
@@ -979,25 +989,24 @@ class WhatsAppSchedulerApp:
                     delta += 1
                 new_time = datetime.now() + timedelta(days=delta)
                 msg["datetime"] = new_time
-                self.update_status(f"Hoy no es dia permitido. Reprogramado para {new_time}")
+                self.update_status(self.i18n.t("status_day_skip", new_time=new_time))
                 self._schedule_message(msg)
                 return
 
         contact = msg["contact"]
-        # Bug fix V8.1.3: mismo lock que el path de grupos para serializar select+send.
         with self.backend._delivery_lock:
             if self.backend.select_contact(contact):
                 if self.backend.send_message(msg["message"], contact):
-                    self.update_status(f"Mensaje enviado a {contact}")
+                    self.update_status(self.i18n.t("status_msg_sent", contact=contact))
                     msg["last_sent"] = now
                     self._clear_delivery_retries(msg)
                     self._reprogram_repeat(msg)
                 else:
-                    if not self._retry_message_delivery(msg, f"Error enviando mensaje a {contact}"):
-                        self.update_status(f"Error enviando mensaje a {contact}")
+                    if not self._retry_message_delivery(msg, self.i18n.t("status_send_err", contact=contact)):
+                        self.update_status(self.i18n.t("status_send_err", contact=contact))
             else:
-                if not self._retry_message_delivery(msg, f"No se pudo abrir chat con {contact}"):
-                    self.update_status(f"No se pudo abrir chat con {contact}")
+                if not self._retry_message_delivery(msg, self.i18n.t("status_chat_fail", contact=contact)):
+                    self.update_status(self.i18n.t("status_chat_fail", contact=contact))
 
     def save_messages_config(self) -> None:
         for group_id in range(1, 5):
@@ -1005,6 +1014,9 @@ class WhatsAppSchedulerApp:
             payload = []
             for idx in range(len(widgets.entries_contact)):
                 days_selected = [day for day, var in enumerate(widgets.days_vars[idx]) if var.get()]
+                # Convertir etiqueta de pantalla → valor canónico para guardar en config.json
+                repeat_display = widgets.repeat_vars[idx].get()
+                repeat_canonical = self.i18n.display_to_canonical(repeat_display)
                 payload.append(
                     {
                         "contact": widgets.entries_contact[idx].get().strip(),
@@ -1019,7 +1031,7 @@ class WhatsAppSchedulerApp:
                         "ampm": widgets.listbox_ampm[idx].get(widgets.listbox_ampm[idx].curselection()[0])
                         if widgets.listbox_ampm[idx].curselection()
                         else "",
-                        "repeat": widgets.repeat_vars[idx].get(),
+                        "repeat": repeat_canonical,
                         "send": bool(widgets.send_vars[idx].get()),
                         "days": days_selected,
                     }
@@ -1027,87 +1039,66 @@ class WhatsAppSchedulerApp:
             self.config_store.set_group_messages(group_id, payload)
 
         self.config_store.set_browser_choice(self.browser_choice_var.get())
-        self.update_status("Configuracion guardada")
+        self.update_status(self.i18n.t("status_config_saved"))
 
     def _start_clock(self) -> None:
-        """Actualiza el reloj en la GUI cada segundo usando root.after (hilo principal)."""
         def _tick() -> None:
             if self.app_quitting:
                 return
             if self.clock_label is not None and self.clock_label.winfo_exists():
                 self.clock_label.config(text="Hora actual: " + datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
             self.clock_after_id = self.root.after(1000, _tick)
-
         _tick()
 
     def _start_sleep_watchdog(self) -> None:
         """
-        Inicia un hilo daemon que detecta cuando el sistema regresa de hibernacion.
-        Principio: el hilo duerme 4 segundos en un bucle. Si entre dos iteraciones
-        pasaron mas de 30 segundos de reloj real, el SO estuvo suspendido.
-        Al detectarlo, dispara la reconexion del browser y la reprogramacion de
-        mensajes que pudieron haber quedado pendientes durante el sueno.
+        Hilo daemon que detecta retorno de hibernacion del sistema.
+        Duerme 4s en bucle; si entre dos iteraciones pasaron mas de 30s, el SO
+        estuvo suspendido y se dispara la reconexion del navegador.
         """
         def _watchdog() -> None:
             last_check = time.time()
             while not self.app_quitting:
-                time.sleep(4)  # Intervalo de revision: 4 segundos
+                time.sleep(4)
                 now = time.time()
                 elapsed = now - last_check
                 last_check = now
-                # Si pasaron mas de 30s (esperabamos ~4s), el sistema durmio
                 if elapsed > 30 and not self.app_quitting:
-                    # Notificar al hilo principal de la GUI de forma segura
                     self._ui_call(self._on_system_wake, elapsed)
 
         threading.Thread(target=_watchdog, daemon=True, name="SleepWatchdog").start()
 
     def _on_system_wake(self, sleep_duration_sec: float) -> None:
-        """
-        Llamado (en el hilo de la GUI) cuando se detecta que el sistema
-        deserto de hibernacion o suspension.
-        Acciones:
-        1. Registrar evento en el log.
-        2. Disparar reconexion forzada del browser en un hilo separado.
-        3. Reprogramar mensajes que quedaron con fecha/hora en el pasado.
-        """
+        """Llamado en el hilo GUI cuando se detecta que el sistema deserto de hibernacion."""
         self.log_message(
             f"[WAKE] Sistema desperto tras ~{sleep_duration_sec:.0f}s de suspension. "
             "Iniciando reconexion del navegador..."
         )
-        self.update_status("Sistema desperto de hibernacion. Reconectando WhatsApp...")
+        self.update_status(self.i18n.t("status_sleep_wake"))
 
-        # Reconexion del browser en hilo separado para no congelar la GUI
         threading.Thread(
             target=self.backend.trigger_post_sleep_recovery,
             daemon=True,
             name="PostSleepRecovery",
         ).start()
 
-        # Reprogramar mensajes pasados que tienen modo de repeticion
         self._reschedule_past_due_repeating_messages()
 
     def _reschedule_past_due_repeating_messages(self) -> None:
         """
-        Tras despertar de hibernacion, revisa los mensajes programados.
-        Si un mensaje con repeticion tiene su datetime en el pasado, lo adelanta
-        al 'ahora + 10 segundos' para que se envie pronto sin perderse.
-        Los mensajes sin repeticion NO se reenvian (ya era intencional que no se enviaran).
-        Se itera sobre un snapshot (copia) de la lista para evitar problemas de
-        concurrencia si hilos de fondo modifican dicts durante la iteracion.
+        Tras despertar de hibernacion, reprograma mensajes con repeticion que quedaron
+        con datetime en el pasado para envio casi inmediato (ahora + 10s).
+        Mensajes sin repeticion NO se reenvian (era intencional no enviarlos).
         """
         now = datetime.now()
         rescheduled = 0
 
-        # Snapshot de la lista: evita RuntimeError si hilos de fondo modifican la lista
-        # mientras iteramos. Los dicts internos se modifican in-place (es intencional).
         for msg in list(self.scheduled_messages):
             msg_dt = msg.get("datetime")
             if not isinstance(msg_dt, datetime) or msg_dt >= now:
-                continue  # No esta en el pasado, no tocar
+                continue
 
             if msg.get("is_group"):
-                # Grupo: revisar cada item individualmente
                 group_rescheduled = 0
                 for item in list(msg.get("items", [])):
                     repeat = item.get("repeat", "Ninguno")
@@ -1116,25 +1107,16 @@ class WhatsAppSchedulerApp:
                         item["datetime"] = now + timedelta(seconds=10)
                         rescheduled += 1
                         group_rescheduled += 1
-                # Bug fix V8.1.3: solo actualizar el container si al menos un item
-                # fue reprogramado. Antes siempre se actualizaba si el container tenia
-                # datetime en el pasado, lo que causaba envios inesperados post-hibernacion
-                # a contactos cuyos items aun no eran debidos (datetime futuro).
                 if group_rescheduled > 0:
                     msg["datetime"] = now + timedelta(seconds=10)
             else:
-                # Mensaje individual con repeticion
                 repeat = msg.get("repeat", "Ninguno")
                 if repeat != "Ninguno":
                     msg["datetime"] = now + timedelta(seconds=10)
                     rescheduled += 1
 
         if rescheduled > 0:
-            self.log_message(
-                f"[WAKE] {rescheduled} mensaje(s) con repeticion reprogramados "
-                "para envio inmediato post-hibernacion."
-            )
-            # Cancelar los after() previos y reprogramar todos desde el snapshot
+            self.log_message(self.i18n.t("status_wake_rescheduled", n=rescheduled))
             self._cancel_all_scheduled_messages()
             for msg in list(self.scheduled_messages):
                 self._schedule_message(msg)

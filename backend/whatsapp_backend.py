@@ -18,7 +18,8 @@ class WhatsAppBackend:
     _TIMEOUT_BIND = 120       # Enlazar pestana de WhatsApp (incluye posible reinicio del browser)
     _TIMEOUT_SELECT = 60      # Seleccionar contacto (busqueda en WhatsApp Web)
     _TIMEOUT_SEND = 120       # Enviar mensaje (escritura + envio + verificacion)
-    _TIMEOUT_POST_SLEEP = 90  # Recuperacion tras hibernacion (browser puede tardar en restaurarse)
+    # FIX V8.2.0: 600s para cubrir kill de zombies (20s) + relaunch (60s) + CDP retries (270s)
+    _TIMEOUT_POST_SLEEP = 600  # Recuperacion tras hibernacion con kill de zombies
 
     def __init__(
         self,

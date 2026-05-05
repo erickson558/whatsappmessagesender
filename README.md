@@ -87,7 +87,7 @@ Tambien puedes usar:
 ```powershell
 python .\scripts\bump_version.py minor
 python .\scripts\bump_version.py major
-python .\scripts\bump_version.py --set 8.1.0
+python .\scripts\bump_version.py --set 8.2.0
 ```
 
 Ese script sincroniza:
