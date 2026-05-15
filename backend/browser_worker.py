@@ -1165,12 +1165,12 @@ class BrowserWorker(threading.Thread):
             ranked = self._rank_candidates(contact, self._collect_candidates())
 
             if not ranked:
-                try:
-                    page.keyboard.press("ArrowDown")
-                    page.wait_for_timeout(100)
-                    page.keyboard.press("Enter")
-                except Exception:
-                    pass
+                # FIX V8.2.1: el fallback ArrowDown+Enter seleccionaba el primer
+                # resultado sin verificar que fuera el contacto correcto, causando
+                # envios al contacto equivocado. Ahora se lanza excepcion para que
+                # el llamante reintente con otro termino de busqueda.
+                self._clear_global_search()
+                raise TimeoutError(f"Sin candidatos en busqueda para contacto: {contact!r}")
             else:
                 for attempt, (score, kind, name, node, idx) in enumerate(ranked[:4], start=1):
                     self.log(f"[LIKE] intento {attempt}: '{name}' (score={score:.2f}, idx={idx})")
@@ -1199,7 +1199,7 @@ class BrowserWorker(threading.Thread):
 
             self._clear_global_search()
             if self._wait_header(contact, timeout_ms=9000):
-                self.log(f"Contacto seleccionado por fallback de teclado: {contact}")
+                self.log(f"Contacto seleccionado (confirmacion por header post-click): {contact}")
                 return True
             raise TimeoutError("No se pudo confirmar apertura del chat objetivo.")
         except Exception as error:

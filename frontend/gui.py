@@ -57,6 +57,12 @@ class WhatsAppSchedulerApp:
         self.clock_after_id = None
         self.scheduled_after_ids: list[str] = []
         self.scheduled_messages: list[dict] = []
+        # Contador de generacion: se incrementa en cada cancel/reschedule para
+        # invalidar callbacks pendientes de iteraciones anteriores. Previene
+        # doble ejecucion de mensajes cuando after-timers expirados durante
+        # hibernacion se disparan DESPUES de que _cancel_all_scheduled_messages
+        # ya corrio (Tkinter no garantiza orden entre after(0,...) y timers vencidos).
+        self._schedule_generation: int = 0
 
         self.status_label: tk.Label | None = None
         self.log_text: tk.Text | None = None
@@ -66,7 +72,7 @@ class WhatsAppSchedulerApp:
         self.browser_path_var = tk.StringVar()
 
         global_cfg = self.config_store.data.get("global", {})
-        self.version = str(global_cfg.get("version", "8.2.0"))
+        self.version = str(global_cfg.get("version", "8.2.1"))
 
         # --- Paso 3: mostrar splash screen ---
         splash, pb_splash, lbl_splash = self._create_splash()
@@ -712,12 +718,17 @@ class WhatsAppSchedulerApp:
         return dt
 
     def _schedule_message(self, msg: dict) -> None:
-        # Para containers de grupo, sincronizar el datetime con el item mas proximo
+        # Para containers de grupo, sincronizar el datetime con el item mas proximo.
+        # Solo se consideran items pendientes: items con repeat o con fecha futura.
+        # Los items sin repeat con fecha pasada ya fueron enviados y no deben
+        # adelantar la programacion del contenedor (evita disparo inmediato erroneo).
         if msg.get("is_group") and msg.get("items"):
+            _now_ref = datetime.now()
             item_dts = [
                 item["datetime"]
                 for item in msg["items"]
                 if isinstance(item.get("datetime"), datetime)
+                and (item.get("repeat", "Ninguno") != "Ninguno" or item["datetime"] > _now_ref)
             ]
             if item_dts:
                 msg["datetime"] = min(item_dts)
@@ -725,8 +736,14 @@ class WhatsAppSchedulerApp:
         target_dt = msg.get("datetime") if isinstance(msg.get("datetime"), datetime) else datetime.now() + timedelta(seconds=2)
         delay_ms = max(1000, int((target_dt - datetime.now()).total_seconds() * 1000))
 
+        # Capturar la generacion actual: si _cancel_all_scheduled_messages incrementa
+        # la generacion antes de que este callback se ejecute, el hilo no se lanza.
+        gen = self._schedule_generation
+
         def _start() -> None:
-            if not self.app_quitting:
+            # Verificar que este callback siga vigente antes de lanzar el hilo.
+            # Si la generacion cambio (reschedule o cancel posterior), ignorar.
+            if not self.app_quitting and self._schedule_generation == gen:
                 threading.Thread(target=self._process_scheduled_message, args=(msg,), daemon=True).start()
 
         try:
@@ -736,6 +753,10 @@ class WhatsAppSchedulerApp:
             pass
 
     def _cancel_all_scheduled_messages(self) -> None:
+        # Incrementar la generacion invalida todos los callbacks pendientes que
+        # aun no han disparado. Los que ya dispararon (pero aun no han lanzado
+        # su hilo) verifican la generacion y se convierten en no-op.
+        self._schedule_generation += 1
         for after_id in self.scheduled_after_ids:
             try:
                 self.root.after_cancel(after_id)
@@ -925,6 +946,11 @@ class WhatsAppSchedulerApp:
                     self.update_status(self.i18n.t("status_day_skip", new_time=new_time))
                     self._schedule_message(item)
                 else:
+                    # Saltar items sin repeticion que ya fueron enviados (tienen last_sent).
+                    # Pueden aparecer en runnable tras hibernacion si el grupo fue
+                    # reprogramado por otros items con repeticion. Evita reenvio duplicado.
+                    if item.get("repeat", "Ninguno") == "Ninguno" and item.get("last_sent") is not None:
+                        continue
                     item_dt = item.get("datetime")
                     if isinstance(item_dt, datetime) and item_dt > datetime.now() + timedelta(seconds=30):
                         self._schedule_message(item)
@@ -1089,9 +1115,30 @@ class WhatsAppSchedulerApp:
         Tras despertar de hibernacion, reprograma mensajes con repeticion que quedaron
         con datetime en el pasado para envio casi inmediato (ahora + 10s).
         Mensajes sin repeticion NO se reenvian (era intencional no enviarlos).
+
+        FIX V8.2.1:
+        - Se verifica last_sent para calcular si la proxima ocurrencia ya paso o no.
+          Si el mensaje fue enviado hace poco y la proxima ocurrencia es futura, se
+          respeta esa fecha en lugar de reprogramar para now+10s.
+        - Solo items con repeat != "Ninguno" se reprograman; items sin repeat y con
+          last_sent ya establecido se ignoran para evitar reenvios duplicados.
         """
         now = datetime.now()
         rescheduled = 0
+
+        def _next_after_sent(last_sent: datetime, repeat: str) -> datetime | None:
+            """Calcula la proxima ocurrencia de repeticion tras last_sent. None si no aplica."""
+            if repeat == "Cada minuto":
+                return last_sent + timedelta(minutes=1)
+            if repeat == "Cada hora":
+                return last_sent + timedelta(hours=1)
+            if repeat == "Diariamente":
+                return last_sent + timedelta(days=1)
+            if repeat == "Semanalmente":
+                return last_sent + timedelta(weeks=1)
+            if repeat == "Mensualmente":
+                return self._add_months(last_sent, 1)
+            return None
 
         for msg in list(self.scheduled_messages):
             msg_dt = msg.get("datetime")
@@ -1103,17 +1150,40 @@ class WhatsAppSchedulerApp:
                 for item in list(msg.get("items", [])):
                     repeat = item.get("repeat", "Ninguno")
                     item_dt = item.get("datetime")
-                    if repeat != "Ninguno" and isinstance(item_dt, datetime) and item_dt < now:
-                        item["datetime"] = now + timedelta(seconds=10)
-                        rescheduled += 1
-                        group_rescheduled += 1
+                    if repeat == "Ninguno" or not isinstance(item_dt, datetime) or item_dt >= now:
+                        continue
+                    # Calcular proxima ocurrencia usando last_sent si esta disponible
+                    last_sent = item.get("last_sent")
+                    if last_sent and isinstance(last_sent, datetime):
+                        next_dt = _next_after_sent(last_sent, repeat)
+                        if next_dt and next_dt > now:
+                            # La proxima ocurrencia es futura: respetar esa fecha
+                            item["datetime"] = next_dt
+                            rescheduled += 1
+                            group_rescheduled += 1
+                            continue
+                    # La proxima ocurrencia ya paso: enviar casi de inmediato
+                    item["datetime"] = now + timedelta(seconds=10)
+                    rescheduled += 1
+                    group_rescheduled += 1
                 if group_rescheduled > 0:
                     msg["datetime"] = now + timedelta(seconds=10)
             else:
                 repeat = msg.get("repeat", "Ninguno")
-                if repeat != "Ninguno":
-                    msg["datetime"] = now + timedelta(seconds=10)
-                    rescheduled += 1
+                if repeat == "Ninguno":
+                    continue
+                if not isinstance(msg_dt, datetime) or msg_dt >= now:
+                    continue
+                # Calcular proxima ocurrencia usando last_sent si esta disponible
+                last_sent = msg.get("last_sent")
+                if last_sent and isinstance(last_sent, datetime):
+                    next_dt = _next_after_sent(last_sent, repeat)
+                    if next_dt and next_dt > now:
+                        msg["datetime"] = next_dt
+                        rescheduled += 1
+                        continue
+                msg["datetime"] = now + timedelta(seconds=10)
+                rescheduled += 1
 
         if rescheduled > 0:
             self.log_message(self.i18n.t("status_wake_rescheduled", n=rescheduled))
