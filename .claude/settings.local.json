@@ -6,7 +6,24 @@
       "Bash(pyinstaller --version)",
       "Bash(ls *.ico *.spec)",
       "Bash(pyinstaller enviar_whatsapp.spec --noconfirm)",
-      "Bash(gh auth:*)"
+      "Bash(gh auth:*)",
+      "Bash(python -c \"from frontend.gui import main; print\\('OK - sintaxis correcta'\\)\")",
+      "Bash(python -c \"from frontend.gui import WhatsAppSchedulerApp; from backend.browser_worker import BrowserWorker; print\\('OK - todo importa correctamente'\\)\")",
+      "Bash(python -c ':*)",
+      "Bash(powershell -ExecutionPolicy Bypass -File build_exe.ps1)",
+      "Bash(python -m pip install --force-reinstall --no-deps \"greenlet==3.0.3\")",
+      "Bash(python -m pip install --ignore-installed \"greenlet==3.0.3\")",
+      "Bash(python -m pip install --ignore-installed \"greenlet>=3.1.1,<4.0.0\")",
+      "Bash(python -c \"import greenlet; print\\(greenlet.__version__, greenlet.__file__\\)\")",
+      "PowerShell(New-Item -ItemType Directory*)",
+      "PowerShell(python scripts/bump_version.py*)",
+      "PowerShell(python scripts/build_windows_version_file.py*)",
+      "PowerShell(gh release*)",
+      "PowerShell(gh run list*)",
+      "PowerShell(git tag*)",
+      "PowerShell(Get-Content VERSION*)",
+      "PowerShell(Get-FileHash*)",
+      "PowerShell(Test-Path*)"
     ]
   }
 }

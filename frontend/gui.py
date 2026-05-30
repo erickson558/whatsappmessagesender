@@ -327,11 +327,12 @@ class WhatsAppSchedulerApp:
         # Botón de donaciones "Cómprame una cerveza"
         btn_donate = tk.Button(
             self.root,
-            text=self.i18n.t("btn_donate") + " \U0001F37A",
+            text=self.i18n.t("btn_donate"),
             command=lambda: webbrowser.open(_DONATE_URL),
-            fg="#0070ba",
-            font=("Helvetica", 9),
-            relief=tk.FLAT,
+            bg="#f5a623",
+            fg="white",
+            font=("Helvetica", 9, "bold"),
+            relief=tk.RAISED,
             cursor="hand2",
         )
         btn_donate.pack(side=tk.BOTTOM, pady=(0, 2))

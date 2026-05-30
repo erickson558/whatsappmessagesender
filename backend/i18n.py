@@ -26,7 +26,7 @@ _ES: Dict[str, object] = {
     # botones principales
     "btn_schedule":           "Programar mensajes",
     "btn_exit":               "Salir",
-    "btn_donate":             "Comprame una cerveza",
+    "btn_donate":             "Cómprame una cerveza 🍺",
     # bloque de mensaje
     "msg_block_title":        "Mensaje {n}",
     "lbl_contact":            "Contacto:",
@@ -94,7 +94,7 @@ _EN: Dict[str, object] = {
     "lbl_language":           "Language:",
     "btn_schedule":           "Schedule messages",
     "btn_exit":               "Exit",
-    "btn_donate":             "Buy me a beer",
+    "btn_donate":             "Buy me a beer 🍺",
     "msg_block_title":        "Message {n}",
     "lbl_contact":            "Contact:",
     "lbl_message":            "Message:",
@@ -137,7 +137,78 @@ _EN: Dict[str, object] = {
     "lang_restart_notice":    "Restart the application to apply the new language.",
 }
 
-_CATALOGS: Dict[str, Dict[str, object]] = {"es": _ES, "en": _EN}
+# ---------------------------------------------------------------------------
+# Catálogo Português (Brasil)
+# ---------------------------------------------------------------------------
+_PT: Dict[str, object] = {
+    "app_title":              "Agendador de Mensagens WhatsApp",
+    "version_label":          "Versão: {v}",
+    "status_ready":           "Status: pronto",
+    # splash
+    "splash_configuring":     "Configurando janela...",
+    "splash_building":        "Construindo interface gráfica...",
+    "splash_engine":          "Iniciando motor do WhatsApp...",
+    "splash_services":        "Iniciando serviços internos...",
+    "splash_ready":           "Pronto!",
+    # barra superior
+    "lbl_browser":            "Navegador:",
+    "btn_browser_path":       "Caminho do navegador",
+    "btn_restore_paths":      "Restaurar caminhos",
+    "btn_save_config":        "Salvar configuração",
+    "browser_path_display":   "Caminho {browser}: {path}",
+    "path_not_configured":    "(não configurado)",
+    "lbl_language":           "Idioma:",
+    # botões principais
+    "btn_schedule":           "Agendar mensagens",
+    "btn_exit":               "Sair",
+    "btn_donate":             "Me pague uma cerveja 🍺",
+    # bloco de mensagem
+    "msg_block_title":        "Mensagem {n}",
+    "lbl_contact":            "Contato:",
+    "lbl_message":            "Mensagem:",
+    "lbl_send_date":          "Data de envio:",
+    "lbl_hour":               "Hora:",
+    "lbl_minute":             "Minuto:",
+    "lbl_ampm":               "AM/PM:",
+    "lbl_repeat":             "Repetir:",
+    "lbl_days":               "Dias:",
+    "chk_send":               "Enviar",
+    "btn_stop_repeat":        "Parar repetição",
+    "btn_set_today":          "Definir hoje",
+    "group_tab":              "Grupo {n}",
+    # nomes dos dias
+    "days":                   ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"],
+    # opções de repetição
+    "repeat_none":            "Nenhum",
+    "repeat_minute":          "A cada minuto",
+    "repeat_hour":            "A cada hora",
+    "repeat_daily":           "Diariamente",
+    "repeat_weekly":          "Semanalmente",
+    "repeat_monthly":         "Mensalmente",
+    # mensagens de status
+    "status_initialized":     "Aplicação inicializada",
+    "status_browser_sel":     "Navegador selecionado: {browser}",
+    "status_path_updated":    "Caminho de {browser} atualizado",
+    "status_paths_restored":  "Caminhos dos navegadores restaurados para os padrões",
+    "status_config_saved":    "Configuração salva",
+    "status_scheduled":       "Mensagens agendadas",
+    "status_repeat_stopped":  "Repetição parada para Grupo {group}, bloco {n}",
+    "status_past_skip":       "Mensagem {n} do {group} está no passado e não será agendada",
+    "status_past_reschedule": "Mensagem {n} do {group}: data passada com repetição '{repeat}'. Reagendada para {dt}",
+    "status_no_time":         "Erro: selecione hora/minuto/AM-PM para mensagem {n} do {group}",
+    "status_bad_date":        "Erro: data/hora inválida na mensagem {n} do {group}",
+    "status_day_skip":        "Hoje não é um dia permitido. Reagendado para {new_time}",
+    "status_msg_sent":        "Mensagem enviada para {contact}",
+    "status_chat_fail":       "Não foi possível abrir o chat com {contact}",
+    "status_send_err":        "Erro ao enviar mensagem para {contact}",
+    "status_retry":           "{reason}. Tentativa {n}/{max} em {secs} segundos.",
+    "status_exhausted":       "{reason}. Tentativas esgotadas ({max}).",
+    "status_sleep_wake":      "Sistema acordou da hibernação. Reconectando WhatsApp...",
+    "status_wake_rescheduled":"[WAKE] {n} mensagem(ns) com repetição reagendadas para envio imediato pós-hibernação.",
+    "lang_restart_notice":    "Reinicie o aplicativo para aplicar o novo idioma.",
+}
+
+_CATALOGS: Dict[str, Dict[str, object]] = {"es": _ES, "en": _EN, "pt": _PT}
 
 # Valores canónicos de repetición (en español, usados internamente y en config.json).
 # La UI puede mostrar versiones traducidas, pero al guardar/comparar siempre se usa esta lista.

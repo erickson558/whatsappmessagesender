@@ -1,5 +1,11 @@
 # Changelog
 
+## [v8.3.0] — 2026-05-30
+### Added
+- Botón "Cómprame una cerveza" con enlace de donación PayPal
+- Soporte de idioma Portugués (PT-BR) con todas las traducciones
+- Nuevo patrón i18n para key btn_donate en ES, EN y PT
+
 ## [v8.1.4] - 2026-04-14
 
 ### Correcciones de estabilidad y robustez
