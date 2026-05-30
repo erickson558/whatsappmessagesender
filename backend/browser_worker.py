@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import os
 import queue
@@ -1251,6 +1251,10 @@ class BrowserWorker(threading.Thread):
         page = self.page
         last_error = None
         for selector in (
+            "footer div[aria-label='Type a message']",
+            "footer div[aria-label='Escribe un mensaje']",
+            "footer div[aria-label^='Type']",
+            "footer div[aria-label^='Escribe']",
             "footer div[aria-label^='Type to']",
             "footer div[aria-label^='Type a message to']",
             "footer div[aria-label^='Escribe a']",
@@ -1437,13 +1441,29 @@ class BrowserWorker(threading.Thread):
                 raise RuntimeError("No se pudo escribir el mensaje en el compositor.")
 
             sent = False
-            try:
-                send_btn = page.get_by_role("button", name=re.compile(r"Enviar|Send", re.I)).first
-                if send_btn.is_visible(timeout=900):
-                    send_btn.click(timeout=1500)
-                    sent = True
-            except Exception:
-                pass
+            # Intentar con data-testid primero (mas confiable en WA Web 2025)
+            for _send_sel in (
+                "button[data-testid='send']",
+                "span[data-testid='send']",
+                "[data-testid='compose-btn-send']",
+            ):
+                try:
+                    _sb = page.locator(_send_sel).first
+                    if _sb.is_visible(timeout=600):
+                        _sb.click(timeout=1500)
+                        sent = True
+                        break
+                except Exception:
+                    continue
+            # Fallback por rol ARIA (compatibilidad anterior)
+            if not sent:
+                try:
+                    send_btn = page.get_by_role("button", name=re.compile(r"Enviar|Send", re.I)).first
+                    if send_btn.is_visible(timeout=700):
+                        send_btn.click(timeout=1500)
+                        sent = True
+                except Exception:
+                    pass
             if not sent:
                 try:
                     for selector in (

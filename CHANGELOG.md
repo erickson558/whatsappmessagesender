@@ -1,5 +1,15 @@
 # Changelog
 
+## [v8.3.3] — 2026-05-30
+### Fixed
+- Selectores del compositor WA Web 2025: aria-label sin nombre de contacto
+- Boton Send: data-testid=send como selector prioritario sobre aria-label
+### Added
+- Sistema de temas light/dark con toggle en la barra superior
+- Tema oscuro: fondo #1A1A2E, logs #0D1117 con texto verde, tabs verde WhatsApp
+- Preferencia de tema persistida en config.json
+- Funcion _theme_children() para restyle recursivo de todos los widgets
+
 ## [v8.3.2] — 2026-05-30
 ### Added
 - Tema visual WhatsApp Pro: paleta de colores verde/blanco consistente

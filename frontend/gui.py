@@ -42,6 +42,27 @@ _F_BTN    = ("Segoe UI", 10, "bold")  # Botones principales
 _F_CLOCK  = ("Segoe UI", 14, "bold")  # Reloj digital
 _F_MONO   = ("Consolas", 9)           # Área de logs (fuente monoespaciada)
 
+_THEMES: dict = {
+    "light": {
+        "bg_main": "#F0F2F5", "bg_card": "#FFFFFF", "bg_top": "#E6E8EB", "bg_log": "#1E2328",
+        "text": "#111B21", "text_muted": "#667781", "text_log": "#B2CFD8",
+        "btn_p": "#075E54", "btn_p_h": "#25D366",
+        "btn_s": "#546475", "btn_s_h": "#3D4F5C",
+        "btn_t": "#128C7E", "btn_t_h": "#075E54",
+        "tab_bg": "#FFFFFF", "tab_fg": "#111B21", "tab_sel": "#075E54", "tab_sel_fg": "#FFFFFF",
+        "clock": "#075E54", "toggle_lbl": "\U0001f319 Oscuro",
+    },
+    "dark": {
+        "bg_main": "#1A1A2E", "bg_card": "#16213E", "bg_top": "#0F3460", "bg_log": "#0D1117",
+        "text": "#E0E0E0", "text_muted": "#A0AEC0", "text_log": "#7EE787",
+        "btn_p": "#25D366", "btn_p_h": "#128C7E",
+        "btn_s": "#4A5568", "btn_s_h": "#2D3748",
+        "btn_t": "#4299E1", "btn_t_h": "#2B6CB0",
+        "tab_bg": "#16213E", "tab_fg": "#E0E0E0", "tab_sel": "#25D366", "tab_sel_fg": "#000000",
+        "clock": "#25D366", "toggle_lbl": "☀️ Claro",
+    },
+}
+
 
 @dataclass
 class MessageGroupWidgets:
@@ -54,6 +75,50 @@ class MessageGroupWidgets:
     send_vars: list[tk.BooleanVar]
     repeat_vars: list[ttk.Combobox]
     days_vars: list[list[tk.BooleanVar]]
+
+
+def _theme_children(widget, th: dict, area: str = "main") -> None:
+    """Aplica el tema recursivamente a los hijos de un widget segun el area (main o top)."""
+    DONATE_COLORS = {"#f5a623", "#f5a623".upper(), "#D4891A", "#d4891a"}
+    try:
+        for child in widget.winfo_children():
+            try:
+                cls = child.winfo_class()
+                bg = th["bg_top"] if area == "top" else th["bg_main"]
+                if cls in ("Frame", "LabelFrame"):
+                    child.configure(bg=bg)
+                elif cls == "Label":
+                    child.configure(bg=bg, fg=th["text"])
+                elif cls == "Button":
+                    try:
+                        cbg = child.cget("bg")
+                    except Exception:
+                        cbg = ""
+                    if cbg in DONATE_COLORS:
+                        pass  # Preservar boton de donacion
+                    elif area == "top":
+                        child.configure(bg=th["btn_t"], fg="#FFFFFF",
+                                        activebackground=th["btn_t_h"])
+                    else:
+                        child.configure(bg=th["btn_t"], fg="#FFFFFF",
+                                        activebackground=th["btn_t_h"],
+                                        relief=tk.FLAT, bd=0)
+                elif cls == "Text":
+                    child.configure(bg=th["bg_log"], fg=th["text_log"])
+                elif cls == "Canvas":
+                    child.configure(bg=th["bg_main"], highlightthickness=0)
+                elif cls == "Listbox":
+                    child.configure(bg=th["bg_card"], fg=th["text"],
+                                    selectbackground=th["btn_p"],
+                                    selectforeground="#FFFFFF")
+                elif cls == "Entry":
+                    child.configure(bg=th["bg_card"], fg=th["text"],
+                                    insertbackground=th["text"])
+            except Exception:
+                pass
+            _theme_children(child, th, area)
+    except Exception:
+        pass
 
 
 class WhatsAppSchedulerApp:
@@ -93,6 +158,7 @@ class WhatsAppSchedulerApp:
 
         global_cfg = self.config_store.data.get("global", {})
         self.version = str(global_cfg.get("version", "8.2.1"))
+        self._active_theme: str = str(self.config_store.get_global("theme", "light"))
 
         # --- Paso 3: mostrar splash screen ---
         splash, pb_splash, lbl_splash = self._create_splash()
@@ -329,6 +395,7 @@ class WhatsAppSchedulerApp:
         # Marco central que contiene el canvas scrolleable con los grupos
         mid = tk.Frame(self.root, bg=_C_BG_MAIN)
         mid.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+        self._mid_frame = mid
 
         # Canvas sin borde visible y fondo del tema
         canvas = tk.Canvas(mid, bg=_C_BG_MAIN, highlightthickness=0)
@@ -345,6 +412,7 @@ class WhatsAppSchedulerApp:
         # Área de logs con fondo oscuro para alto contraste (terminal style)
         log_frame = tk.Frame(self.root, bg=_C_LOG_BG)
         log_frame.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=False)
+        self._log_frame = log_frame
         self.log_text = tk.Text(
             log_frame,
             height=8,
@@ -366,6 +434,7 @@ class WhatsAppSchedulerApp:
         # Notebook con los 4 grupos de mensajes (tabs estilizados por _apply_theme)
         notebook = ttk.Notebook(main_frame)
         notebook.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+        self._main_notebook = notebook
 
         for group_id in range(1, 5):
             # Cada pestaña con fondo del tema
@@ -393,6 +462,7 @@ class WhatsAppSchedulerApp:
             bd=0,
         )
         btn_schedule.pack(side=tk.TOP, pady=(8, 3))
+        self._btn_schedule = btn_schedule
 
         # Botón secundario: Salir (gris oscuro, menos prominente que el principal)
         btn_exit = tk.Button(
@@ -412,6 +482,7 @@ class WhatsAppSchedulerApp:
             bd=0,
         )
         btn_exit.pack(side=tk.TOP, pady=(0, 8))
+        self._btn_exit = btn_exit
 
         # Botón de donaciones "Cómprame una cerveza" (color ámbar, fijo)
         btn_donate = tk.Button(
@@ -444,55 +515,85 @@ class WhatsAppSchedulerApp:
     # TEMA VISUAL
     # =========================================================================
 
-    def _apply_theme(self) -> None:
-        """Aplica estilos ttk a los widgets Notebook, Scrollbar y Combobox del tema WhatsApp Pro."""
+    def _toggle_theme(self) -> None:
+        """Alterna entre tema claro y oscuro, actualiza todos los widgets y guarda la preferencia."""
+        new_theme = "dark" if self._active_theme == "light" else "light"
+        self._apply_theme(new_theme)
+
+    def _apply_theme(self, theme_name: str | None = None) -> None:
+        """Aplica el tema visual completo (light/dark) a todos los widgets de la aplicacion."""
+        if theme_name is not None:
+            self._active_theme = theme_name
+            self.config_store.set_global("theme", theme_name)
+        th = _THEMES.get(self._active_theme, _THEMES["light"])
+
+        # Actualizar boton de tema con el label del nuevo estado
+        if hasattr(self, "_theme_btn"):
+            self._theme_btn.configure(text=th["toggle_lbl"],
+                                      bg=th["btn_t"], activebackground=th["btn_t_h"])
+
+        # Ventana raiz
+        self.root.configure(bg=th["bg_main"])
+
+        # Barra de estado
+        if self.status_label:
+            self.status_label.configure(bg=th["bg_card"], fg=th["text"])
+
+        # Reloj
+        if self.clock_label:
+            self.clock_label.configure(bg=th["bg_main"], fg=th["clock"])
+
+        # Area de logs
+        if hasattr(self, "_log_frame"):
+            self._log_frame.configure(bg=th["bg_log"])
+        if self.log_text:
+            self.log_text.configure(bg=th["bg_log"], fg=th["text_log"],
+                                    insertbackground=th["text_log"],
+                                    selectbackground=th["btn_p"])
+
+        # Botones principales
+        if hasattr(self, "_btn_schedule"):
+            self._btn_schedule.configure(bg=th["btn_p"], activebackground=th["btn_p_h"])
+        if hasattr(self, "_btn_exit"):
+            self._btn_exit.configure(bg=th["btn_s"], activebackground=th["btn_s_h"])
+
+        # Barra superior y sus hijos
+        if hasattr(self, "_top_frame"):
+            self._top_frame.configure(bg=th["bg_top"])
+            _theme_children(self._top_frame, th, area="top")
+
+        # Frame central y canvas
+        if hasattr(self, "_mid_frame"):
+            self._mid_frame.configure(bg=th["bg_main"])
+            _theme_children(self._mid_frame, th, area="main")
+
+        # Tabs del Notebook y contenido de grupos de mensajes
+        if hasattr(self, "_main_notebook"):
+            for tab_frame in self._main_notebook.winfo_children():
+                try:
+                    tab_frame.configure(bg=th["bg_main"])
+                except Exception:
+                    pass
+                _theme_children(tab_frame, th, area="main")
+
+        # Estilos ttk: Notebook tabs, Scrollbar, Combobox
         style = ttk.Style()
-        # Usar "clam" como base porque es el más personalizable de los temas nativos
         style.theme_use("clam")
-
-        # --- Notebook (pestañas de grupos) ---
-        # Fondo general del notebook sin borde visible
-        style.configure("TNotebook", background=_C_BG_MAIN, borderwidth=0, tabmargins=[2, 4, 0, 0])
-        # Pestaña inactiva: fondo claro, texto oscuro
-        style.configure(
-            "TNotebook.Tab",
-            background=_C_BG_CARD,
-            foreground=_C_TEXT,
-            font=_F_BODY,
-            padding=[16, 7],
-        )
-        # Pestaña activa: fondo verde primario, texto blanco
-        style.map(
-            "TNotebook.Tab",
-            background=[("selected", _C_PRIMARY), ("active", _C_ACCENT)],
-            foreground=[("selected", "#FFFFFF"), ("active", "#FFFFFF")],
-        )
-
-        # --- Scrollbars — minimalistas y acordes al tema ---
-        style.configure(
-            "TScrollbar",
-            background=_C_BG_MAIN,
-            troughcolor="#D9DBDD",
-            relief="flat",
-            arrowsize=13,
-        )
-        style.map("TScrollbar", background=[("active", _C_ACCENT)])
-
-        # --- Combobox (selectors de navegador e idioma) ---
-        style.configure(
-            "TCombobox",
-            fieldbackground=_C_BG_CARD,
-            foreground=_C_TEXT,
-            background="#D9DBDD",
-            font=_F_BODY,
-            selectbackground=_C_PRIMARY,
-            selectforeground="#FFFFFF",
-        )
-        style.map(
-            "TCombobox",
-            fieldbackground=[("readonly", _C_BG_CARD)],
-            foreground=[("readonly", _C_TEXT)],
-        )
+        style.configure("TNotebook", background=th["bg_main"], borderwidth=0)
+        style.configure("TNotebook.Tab", background=th["tab_bg"], foreground=th["tab_fg"],
+                        font=_F_BODY, padding=[16, 7])
+        style.map("TNotebook.Tab",
+                  background=[("selected", th["tab_sel"]), ("active", th["btn_t"])],
+                  foreground=[("selected", th["tab_sel_fg"]), ("active", "#FFFFFF")])
+        style.configure("TScrollbar", background=th["bg_main"],
+                        troughcolor=th["bg_card"], relief="flat", arrowsize=13)
+        style.map("TScrollbar", background=[("active", th["btn_t"])])
+        style.configure("TCombobox", fieldbackground=th["bg_card"], foreground=th["text"],
+                        background=th["bg_top"], font=_F_BODY,
+                        selectbackground=th["btn_p"], selectforeground="#FFFFFF")
+        style.map("TCombobox",
+                  fieldbackground=[("readonly", th["bg_card"])],
+                  foreground=[("readonly", th["text"])])
 
     # =========================================================================
     # BARRA DE MENÚS
@@ -581,6 +682,7 @@ class WhatsAppSchedulerApp:
         # Barra superior diferenciada visualmente del cuerpo principal
         top = tk.Frame(self.root, bg=_C_BG_TOP, padx=6, pady=6)
         top.pack(side=tk.TOP, fill=tk.X)
+        self._top_frame = top
 
         # Label "Navegador:" con el color del tema
         tk.Label(top, text=self.i18n.t("lbl_browser"), bg=_C_BG_TOP, fg=_C_TEXT, font=_F_BODY).grid(row=0, column=0, padx=(4, 2))
@@ -621,6 +723,17 @@ class WhatsAppSchedulerApp:
         )
         lang_combo.grid(row=0, column=6, padx=4)
         lang_combo.bind("<<ComboboxSelected>>", self._on_language_select)
+
+        # Boton de cambio de tema (claro/oscuro)
+        self._theme_btn = tk.Button(
+            top,
+            text=_THEMES[self._active_theme]["toggle_lbl"],
+            command=self._toggle_theme,
+            bg=_C_ACCENT, fg="#FFFFFF", font=_F_SMALL, relief=tk.FLAT,
+            activebackground=_C_PRIMARY, activeforeground="#FFFFFF",
+            cursor="hand2", padx=8, pady=4, bd=0,
+        )
+        self._theme_btn.grid(row=0, column=7, padx=(8, 4))
 
         # Etiqueta con la ruta actual del navegador (texto pequeño y discreto)
         self.browser_path_label = tk.Label(
