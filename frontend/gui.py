@@ -266,6 +266,8 @@ class WhatsAppSchedulerApp:
         )
 
     def _build_ui(self) -> None:
+        # Construir la barra de menús antes de cualquier otro widget
+        self._build_menubar()
         version_label = tk.Label(self.root, text=self.i18n.t("version_label", v=self.version), font=("Helvetica", 10))
         version_label.pack(side=tk.BOTTOM, pady=2)
 
@@ -342,6 +344,89 @@ class WhatsAppSchedulerApp:
         self.root.bind_all("<Alt-p>", lambda _: self.schedule_all_messages())
         self.root.bind_all("<Alt-s>", lambda _: self.root.event_generate("<<ExitRequested>>"))
         self.root.bind("<<ExitRequested>>", self._on_exit_requested)
+
+    # =========================================================================
+    # BARRA DE MENÚS
+    # =========================================================================
+
+    def _build_menubar(self) -> None:
+        """Construye la barra de menús principal de la aplicación."""
+        menubar = tk.Menu(self.root)
+        self.root.config(menu=menubar)
+
+        # --- Menú Ayuda / Help / Ajuda (según idioma activo) ---
+        help_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label=self.i18n.t("menu_help"), menu=help_menu)
+
+        # Opción: Cómprame una cerveza (abre el link de donación en el navegador)
+        help_menu.add_command(
+            label=self.i18n.t("btn_donate"),
+            command=lambda: webbrowser.open(_DONATE_URL),
+        )
+        help_menu.add_separator()
+
+        # Opción: Acerca de / About / Sobre (abre el diálogo de información)
+        help_menu.add_command(
+            label=self.i18n.t("menu_about"),
+            command=self._show_about,
+        )
+
+    def _show_about(self) -> None:
+        """Muestra un diálogo modal con información de la aplicación (nombre, versión, autor, copyright)."""
+        import datetime
+        year = datetime.date.today().year
+
+        # Crear ventana modal centrada sobre la ventana principal
+        about_win = tk.Toplevel(self.root)
+        about_win.title(self.i18n.t("menu_about"))
+        about_win.resizable(False, False)
+        about_win.transient(self.root)  # Hijo de la ventana principal
+        about_win.grab_set()            # Bloquea interacción con la ventana principal
+
+        # Calcular posición centrada sobre la ventana principal
+        self.root.update_idletasks()
+        x = self.root.winfo_x() + self.root.winfo_width() // 2 - 175
+        y = self.root.winfo_y() + self.root.winfo_height() // 2 - 115
+        about_win.geometry(f"350x230+{x}+{y}")
+
+        # Nombre de la aplicación (título grande)
+        tk.Label(
+            about_win,
+            text="WhatsApp Message Sender",
+            font=("Helvetica", 15, "bold"),
+            pady=14,
+        ).pack()
+
+        # Versión actual
+        tk.Label(
+            about_win,
+            text=f"Versión {self.version}",
+            font=("Helvetica", 11),
+        ).pack()
+
+        # Autor
+        tk.Label(
+            about_win,
+            text="\nCreado por Synyster Rick",
+            font=("Helvetica", 10),
+        ).pack()
+
+        # Copyright año actual
+        tk.Label(
+            about_win,
+            text=f"© {year} Derechos Reservados",
+            font=("Helvetica", 10),
+            fg="#555555",
+        ).pack()
+
+        # Botón para cerrar el diálogo
+        tk.Button(
+            about_win,
+            text="OK",
+            command=about_win.destroy,
+            width=10,
+            pady=4,
+        ).pack(pady=14)
 
     def _build_top_controls(self) -> None:
         top = tk.Frame(self.root)

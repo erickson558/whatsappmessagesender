@@ -27,6 +27,9 @@ _ES: Dict[str, object] = {
     "btn_schedule":           "Programar mensajes",
     "btn_exit":               "Salir",
     "btn_donate":             "Cómprame una cerveza 🍺",
+    # menú de aplicación
+    "menu_help":              "Ayuda",
+    "menu_about":             "Acerca de",
     # bloque de mensaje
     "msg_block_title":        "Mensaje {n}",
     "lbl_contact":            "Contacto:",
@@ -95,6 +98,9 @@ _EN: Dict[str, object] = {
     "btn_schedule":           "Schedule messages",
     "btn_exit":               "Exit",
     "btn_donate":             "Buy me a beer 🍺",
+    # application menu
+    "menu_help":              "Help",
+    "menu_about":             "About",
     "msg_block_title":        "Message {n}",
     "lbl_contact":            "Contact:",
     "lbl_message":            "Message:",
@@ -162,6 +168,9 @@ _PT: Dict[str, object] = {
     "btn_schedule":           "Agendar mensagens",
     "btn_exit":               "Sair",
     "btn_donate":             "Me pague uma cerveja 🍺",
+    # menu da aplicação
+    "menu_help":              "Ajuda",
+    "menu_about":             "Sobre",
     # bloco de mensagem
     "msg_block_title":        "Mensagem {n}",
     "lbl_contact":            "Contato:",

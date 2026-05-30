@@ -1,5 +1,12 @@
 # Changelog
 
+## [v8.3.1] — 2026-05-30
+### Added
+- Barra de menús con opcion Ayuda > Acerca de y Cómprame una cerveza
+- Dialogo About modal con nombre, version, autor y copyright
+- Skill /fix-errors para QA, debugging y versionado profesional
+- Claves i18n menu_help y menu_about en ES, EN y PT
+
 ## [v8.3.0] — 2026-05-30
 ### Added
 - Botón "Cómprame una cerveza" con enlace de donación PayPal
