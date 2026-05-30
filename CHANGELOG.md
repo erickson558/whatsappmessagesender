@@ -1,5 +1,16 @@
 # Changelog
 
+## [v8.3.2] — 2026-05-30
+### Added
+- Tema visual WhatsApp Pro: paleta de colores verde/blanco consistente
+- Barra superior diferenciada con botones estilizados en verde teal
+- Area de logs con fondo oscuro (terminal style) y fuente Consolas
+- Reloj prominente en verde primario con fuente Segoe UI Bold
+- Barra de estado con fondo blanco y padding mejorado
+- Botones Programar y Salir con colores, flat relief y cursor hand2
+- Tabs del Notebook activos en verde oscuro con texto blanco
+- Agente gui-designer y skill /modernize-gui para mejoras futuras
+
 ## [v8.3.1] — 2026-05-30
 ### Added
 - Barra de menús con opcion Ayuda > Acerca de y Cómprame una cerveza

@@ -22,6 +22,26 @@ from backend.whatsapp_backend import WhatsAppBackend
 # URL del botón de donaciones
 _DONATE_URL = "https://www.paypal.com/donate/?hosted_button_id=ZABFRXC2P3JQN"
 
+# === Sistema de diseño visual — Tema WhatsApp Pro ===
+_C_PRIMARY    = "#075E54"   # Verde oscuro — botones principales, tabs activos
+_C_ACCENT     = "#128C7E"   # Verde teal — botones secundarios, hover
+_C_ACTION     = "#25D366"   # Verde vivo — hover de acción, estado OK
+_C_BG_MAIN    = "#F0F2F5"   # Fondo principal (gris muy claro)
+_C_BG_CARD    = "#FFFFFF"   # Fondo de tarjetas y áreas editables
+_C_BG_TOP     = "#E6E8EB"   # Fondo barra superior (diferenciada)
+_C_TEXT       = "#111B21"   # Texto principal (casi negro)
+_C_TEXT_MUTED = "#667781"   # Texto secundario (gris azulado)
+_C_LOG_BG     = "#1E2328"   # Fondo del área de logs (oscuro)
+_C_LOG_FG     = "#B2CFD8"   # Texto del log sobre fondo oscuro
+_C_EXIT       = "#546475"   # Botón salir (gris oscuro)
+_C_EXIT_H     = "#3D4F5C"   # Hover del botón salir
+
+_F_BODY   = ("Segoe UI", 10)          # Texto general
+_F_SMALL  = ("Segoe UI", 9)           # Labels pequeños
+_F_BTN    = ("Segoe UI", 10, "bold")  # Botones principales
+_F_CLOCK  = ("Segoe UI", 14, "bold")  # Reloj digital
+_F_MONO   = ("Consolas", 9)           # Área de logs (fuente monoespaciada)
+
 
 @dataclass
 class MessageGroupWidgets:
@@ -268,82 +288,211 @@ class WhatsAppSchedulerApp:
     def _build_ui(self) -> None:
         # Construir la barra de menús antes de cualquier otro widget
         self._build_menubar()
-        version_label = tk.Label(self.root, text=self.i18n.t("version_label", v=self.version), font=("Helvetica", 10))
+        # Aplicar fondo del tema a la ventana principal
+        self.root.configure(bg=_C_BG_MAIN)
+
+        # Etiqueta de versión — discreta, esquina inferior izquierda
+        version_label = tk.Label(
+            self.root,
+            text=self.i18n.t("version_label", v=self.version),
+            font=_F_SMALL,
+            bg=_C_BG_MAIN,
+            fg=_C_TEXT_MUTED,
+        )
         version_label.pack(side=tk.BOTTOM, pady=2)
 
         self._build_top_controls()
 
-        self.clock_label = tk.Label(self.root, font=("Helvetica", 12))
-        self.clock_label.pack(side=tk.BOTTOM, pady=5)
+        # Reloj digital — grande y en verde primario para que destaque
+        self.clock_label = tk.Label(
+            self.root,
+            font=_F_CLOCK,
+            bg=_C_BG_MAIN,
+            fg=_C_PRIMARY,
+        )
+        self.clock_label.pack(side=tk.BOTTOM, pady=4)
 
-        self.status_label = tk.Label(self.root, text=self.i18n.t("status_ready"), anchor="w")
+        # Barra de estado — fondo blanco, borde sutil, con padding lateral
+        self.status_label = tk.Label(
+            self.root,
+            text=self.i18n.t("status_ready"),
+            anchor="w",
+            bg=_C_BG_CARD,
+            fg=_C_TEXT,
+            font=_F_BODY,
+            padx=10,
+            pady=5,
+            relief=tk.FLAT,
+        )
         self.status_label.pack(fill="x")
 
-        mid = tk.Frame(self.root)
+        # Marco central que contiene el canvas scrolleable con los grupos
+        mid = tk.Frame(self.root, bg=_C_BG_MAIN)
         mid.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
-        canvas = tk.Canvas(mid)
+        # Canvas sin borde visible y fondo del tema
+        canvas = tk.Canvas(mid, bg=_C_BG_MAIN, highlightthickness=0)
         canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         vscroll = tk.Scrollbar(mid, orient=tk.VERTICAL, command=canvas.yview)
         vscroll.pack(side=tk.RIGHT, fill=tk.Y)
         canvas.configure(yscrollcommand=vscroll.set)
 
-        main_frame = tk.Frame(canvas)
+        # Frame interno del canvas con fondo del tema
+        main_frame = tk.Frame(canvas, bg=_C_BG_MAIN)
         canvas.create_window((0, 0), window=main_frame, anchor="nw")
         main_frame.bind("<Configure>", lambda event: canvas.configure(scrollregion=canvas.bbox("all")))
 
-        log_frame = tk.Frame(self.root)
+        # Área de logs con fondo oscuro para alto contraste (terminal style)
+        log_frame = tk.Frame(self.root, bg=_C_LOG_BG)
         log_frame.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=False)
-        self.log_text = tk.Text(log_frame, height=10)
+        self.log_text = tk.Text(
+            log_frame,
+            height=8,
+            bg=_C_LOG_BG,
+            fg=_C_LOG_FG,
+            font=_F_MONO,
+            relief=tk.FLAT,
+            insertbackground=_C_LOG_FG,
+            padx=8,
+            pady=4,
+            selectbackground=_C_PRIMARY,
+            selectforeground="#FFFFFF",
+        )
         self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         log_scroll = tk.Scrollbar(log_frame, orient=tk.VERTICAL, command=self.log_text.yview)
         self.log_text.configure(yscrollcommand=log_scroll.set)
         log_scroll.pack(side=tk.RIGHT, fill=tk.Y)
 
+        # Notebook con los 4 grupos de mensajes (tabs estilizados por _apply_theme)
         notebook = ttk.Notebook(main_frame)
         notebook.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
         for group_id in range(1, 5):
-            frame = tk.Frame(notebook)
+            # Cada pestaña con fondo del tema
+            frame = tk.Frame(notebook, bg=_C_BG_MAIN)
             notebook.add(frame, text=self.i18n.t("group_tab", n=group_id))
             num_messages = int(self.config_store.get_global(f"num_messages_group{group_id}", 4))
             pre_config = self.config_store.get_group_messages(group_id)
             self.groups[group_id] = self._create_message_blocks(frame, num_messages, group_id, pre_config)
 
+        # Botón principal: Programar mensajes (verde WhatsApp prominente)
         btn_schedule = tk.Button(
             self.root,
             text=self.i18n.t("btn_schedule"),
             command=self.schedule_all_messages,
             underline=10,
+            bg=_C_PRIMARY,
+            fg="#FFFFFF",
+            font=_F_BTN,
+            relief=tk.FLAT,
+            activebackground=_C_ACTION,
+            activeforeground="#FFFFFF",
+            cursor="hand2",
+            padx=22,
+            pady=9,
+            bd=0,
         )
-        btn_schedule.pack(side=tk.TOP, pady=5)
+        btn_schedule.pack(side=tk.TOP, pady=(8, 3))
 
+        # Botón secundario: Salir (gris oscuro, menos prominente que el principal)
         btn_exit = tk.Button(
             self.root,
             text=self.i18n.t("btn_exit"),
             command=lambda: self.root.event_generate("<<ExitRequested>>"),
             underline=0,
+            bg=_C_EXIT,
+            fg="#FFFFFF",
+            font=_F_BTN,
+            relief=tk.FLAT,
+            activebackground=_C_EXIT_H,
+            activeforeground="#FFFFFF",
+            cursor="hand2",
+            padx=22,
+            pady=9,
+            bd=0,
         )
-        btn_exit.pack(side=tk.TOP, pady=5)
+        btn_exit.pack(side=tk.TOP, pady=(0, 8))
 
-        # Botón de donaciones "Cómprame una cerveza"
+        # Botón de donaciones "Cómprame una cerveza" (color ámbar, fijo)
         btn_donate = tk.Button(
             self.root,
             text=self.i18n.t("btn_donate"),
             command=lambda: webbrowser.open(_DONATE_URL),
-            bg="#f5a623",
-            fg="white",
-            font=("Helvetica", 9, "bold"),
-            relief=tk.RAISED,
+            bg="#F5A623",
+            fg="#FFFFFF",
+            font=_F_SMALL,
+            activebackground="#D4891A",
+            activeforeground="#FFFFFF",
+            relief=tk.FLAT,
             cursor="hand2",
+            padx=12,
+            pady=5,
+            bd=0,
         )
-        btn_donate.pack(side=tk.BOTTOM, pady=(0, 2))
+        btn_donate.pack(side=tk.BOTTOM, pady=(0, 4))
 
         self.root.bind_all("<Alt-r>", lambda _: self._reset_default_paths())
         self.root.bind_all("<Alt-g>", lambda _: self.save_messages_config())
         self.root.bind_all("<Alt-p>", lambda _: self.schedule_all_messages())
         self.root.bind_all("<Alt-s>", lambda _: self.root.event_generate("<<ExitRequested>>"))
         self.root.bind("<<ExitRequested>>", self._on_exit_requested)
+
+        # Aplicar estilos ttk al final (notebook tabs, scrollbars, combobox)
+        self._apply_theme()
+
+    # =========================================================================
+    # TEMA VISUAL
+    # =========================================================================
+
+    def _apply_theme(self) -> None:
+        """Aplica estilos ttk a los widgets Notebook, Scrollbar y Combobox del tema WhatsApp Pro."""
+        style = ttk.Style()
+        # Usar "clam" como base porque es el más personalizable de los temas nativos
+        style.theme_use("clam")
+
+        # --- Notebook (pestañas de grupos) ---
+        # Fondo general del notebook sin borde visible
+        style.configure("TNotebook", background=_C_BG_MAIN, borderwidth=0, tabmargins=[2, 4, 0, 0])
+        # Pestaña inactiva: fondo claro, texto oscuro
+        style.configure(
+            "TNotebook.Tab",
+            background=_C_BG_CARD,
+            foreground=_C_TEXT,
+            font=_F_BODY,
+            padding=[16, 7],
+        )
+        # Pestaña activa: fondo verde primario, texto blanco
+        style.map(
+            "TNotebook.Tab",
+            background=[("selected", _C_PRIMARY), ("active", _C_ACCENT)],
+            foreground=[("selected", "#FFFFFF"), ("active", "#FFFFFF")],
+        )
+
+        # --- Scrollbars — minimalistas y acordes al tema ---
+        style.configure(
+            "TScrollbar",
+            background=_C_BG_MAIN,
+            troughcolor="#D9DBDD",
+            relief="flat",
+            arrowsize=13,
+        )
+        style.map("TScrollbar", background=[("active", _C_ACCENT)])
+
+        # --- Combobox (selectors de navegador e idioma) ---
+        style.configure(
+            "TCombobox",
+            fieldbackground=_C_BG_CARD,
+            foreground=_C_TEXT,
+            background="#D9DBDD",
+            font=_F_BODY,
+            selectbackground=_C_PRIMARY,
+            selectforeground="#FFFFFF",
+        )
+        style.map(
+            "TCombobox",
+            fieldbackground=[("readonly", _C_BG_CARD)],
+            foreground=[("readonly", _C_TEXT)],
+        )
 
     # =========================================================================
     # BARRA DE MENÚS
@@ -429,28 +578,39 @@ class WhatsAppSchedulerApp:
         ).pack(pady=14)
 
     def _build_top_controls(self) -> None:
-        top = tk.Frame(self.root)
-        top.pack(side=tk.TOP, fill=tk.X, pady=5)
+        # Barra superior diferenciada visualmente del cuerpo principal
+        top = tk.Frame(self.root, bg=_C_BG_TOP, padx=6, pady=6)
+        top.pack(side=tk.TOP, fill=tk.X)
 
-        tk.Label(top, text=self.i18n.t("lbl_browser")).grid(row=0, column=0, padx=5)
+        # Label "Navegador:" con el color del tema
+        tk.Label(top, text=self.i18n.t("lbl_browser"), bg=_C_BG_TOP, fg=_C_TEXT, font=_F_BODY).grid(row=0, column=0, padx=(4, 2))
         browser_combo = ttk.Combobox(
             top, values=list(SUPPORTED_BROWSERS), state="readonly", width=12,
             textvariable=self.browser_choice_var,
         )
-        browser_combo.grid(row=0, column=1, padx=5)
+        browser_combo.grid(row=0, column=1, padx=4)
         browser_combo.bind("<<ComboboxSelected>>", self._on_browser_select)
 
-        btn_path = tk.Button(top, text=self.i18n.t("btn_browser_path"), command=self._select_browser_path)
-        btn_path.grid(row=0, column=2, padx=5)
+        # Configuración compartida de estilo para los botones de la barra superior
+        _top_btn = dict(
+            bg=_C_ACCENT, fg="#FFFFFF", font=_F_SMALL, relief=tk.FLAT,
+            activebackground=_C_PRIMARY, activeforeground="#FFFFFF",
+            cursor="hand2", padx=8, pady=4, bd=0,
+        )
+        # Botón: seleccionar ruta del navegador
+        btn_path = tk.Button(top, text=self.i18n.t("btn_browser_path"), command=self._select_browser_path, **_top_btn)
+        btn_path.grid(row=0, column=2, padx=4)
 
-        btn_reset = tk.Button(top, text=self.i18n.t("btn_restore_paths"), command=self._reset_default_paths)
-        btn_reset.grid(row=0, column=3, padx=5)
+        # Botón: restaurar rutas por defecto
+        btn_reset = tk.Button(top, text=self.i18n.t("btn_restore_paths"), command=self._reset_default_paths, **_top_btn)
+        btn_reset.grid(row=0, column=3, padx=4)
 
-        btn_save = tk.Button(top, text=self.i18n.t("btn_save_config"), command=self.save_messages_config)
-        btn_save.grid(row=0, column=4, padx=5)
+        # Botón: guardar configuración
+        btn_save = tk.Button(top, text=self.i18n.t("btn_save_config"), command=self.save_messages_config, **_top_btn)
+        btn_save.grid(row=0, column=4, padx=4)
 
-        # Selector de idioma
-        tk.Label(top, text=self.i18n.t("lbl_language")).grid(row=0, column=5, padx=(15, 2))
+        # Selector de idioma con label discreto
+        tk.Label(top, text=self.i18n.t("lbl_language"), bg=_C_BG_TOP, fg=_C_TEXT, font=_F_BODY).grid(row=0, column=5, padx=(14, 2))
         self.lang_var = tk.StringVar(value=self.i18n.lang)
         lang_combo = ttk.Combobox(
             top,
@@ -459,11 +619,15 @@ class WhatsAppSchedulerApp:
             width=5,
             textvariable=self.lang_var,
         )
-        lang_combo.grid(row=0, column=6, padx=5)
+        lang_combo.grid(row=0, column=6, padx=4)
         lang_combo.bind("<<ComboboxSelected>>", self._on_language_select)
 
-        self.browser_path_label = tk.Label(top, textvariable=self.browser_path_var, anchor="w")
-        self.browser_path_label.grid(row=1, column=0, columnspan=7, sticky="we", padx=5, pady=(4, 0))
+        # Etiqueta con la ruta actual del navegador (texto pequeño y discreto)
+        self.browser_path_label = tk.Label(
+            top, textvariable=self.browser_path_var, anchor="w",
+            bg=_C_BG_TOP, fg=_C_TEXT_MUTED, font=_F_SMALL,
+        )
+        self.browser_path_label.grid(row=1, column=0, columnspan=7, sticky="we", padx=4, pady=(3, 0))
 
     def _on_language_select(self, _event=None) -> None:
         """Guarda la seleccion de idioma en config. El cambio aplica al reiniciar la app."""
