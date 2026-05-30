@@ -6,6 +6,7 @@ import threading
 import time
 import webbrowser
 import tkinter as tk
+import customtkinter as ctk          # GUI moderna con esquinas redondeadas y dark mode
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from tkinter import filedialog, ttk
@@ -41,6 +42,9 @@ _F_SMALL  = ("Segoe UI", 9)           # Labels pequeños
 _F_BTN    = ("Segoe UI", 10, "bold")  # Botones principales
 _F_CLOCK  = ("Segoe UI", 14, "bold")  # Reloj digital
 _F_MONO   = ("Consolas", 9)           # Área de logs (fuente monoespaciada)
+
+# Tema de color por defecto para widgets CustomTkinter (debe llamarse antes de crear widgets CTk)
+ctk.set_default_color_theme("green")
 
 _THEMES: dict = {
     "light": {
@@ -82,6 +86,9 @@ def _theme_children(widget, th: dict, area: str = "main") -> None:
     DONATE_COLORS = {"#f5a623", "#f5a623".upper(), "#D4891A", "#d4891a"}
     try:
         for child in widget.winfo_children():
+            # Omitir widgets CustomTkinter — se auto-tematizan via ctk.set_appearance_mode()
+            if type(child).__name__.startswith("CTk"):
+                continue
             try:
                 cls = child.winfo_class()
                 bg = th["bg_top"] if area == "top" else th["bg_main"]
@@ -159,6 +166,8 @@ class WhatsAppSchedulerApp:
         global_cfg = self.config_store.data.get("global", {})
         self.version = str(global_cfg.get("version", "8.2.1"))
         self._active_theme: str = str(self.config_store.get_global("theme", "light"))
+        # Aplicar modo de apariencia a widgets CustomTkinter antes de crearlos
+        ctk.set_appearance_mode("dark" if self._active_theme == "dark" else "light")
 
         # --- Paso 3: mostrar splash screen ---
         splash, pb_splash, lbl_splash = self._create_splash()
@@ -444,61 +453,53 @@ class WhatsAppSchedulerApp:
             pre_config = self.config_store.get_group_messages(group_id)
             self.groups[group_id] = self._create_message_blocks(frame, num_messages, group_id, pre_config)
 
-        # Botón principal: Programar mensajes (verde WhatsApp prominente)
-        btn_schedule = tk.Button(
+        # Botón principal: Programar mensajes — CTkButton con esquinas redondeadas
+        btn_schedule = ctk.CTkButton(
             self.root,
             text=self.i18n.t("btn_schedule"),
             command=self.schedule_all_messages,
-            underline=10,
-            bg=_C_PRIMARY,
-            fg="#FFFFFF",
-            font=_F_BTN,
-            relief=tk.FLAT,
-            activebackground=_C_ACTION,
-            activeforeground="#FFFFFF",
+            fg_color=_C_PRIMARY,
+            hover_color=_C_ACTION,
+            text_color="#FFFFFF",
+            font=ctk.CTkFont("Segoe UI", 11, weight="bold"),
+            corner_radius=8,
+            height=42,
+            width=230,
             cursor="hand2",
-            padx=22,
-            pady=9,
-            bd=0,
         )
         btn_schedule.pack(side=tk.TOP, pady=(8, 3))
         self._btn_schedule = btn_schedule
 
-        # Botón secundario: Salir (gris oscuro, menos prominente que el principal)
-        btn_exit = tk.Button(
+        # Botón secundario: Salir — tono gris oscuro, menos prominente
+        btn_exit = ctk.CTkButton(
             self.root,
             text=self.i18n.t("btn_exit"),
             command=lambda: self.root.event_generate("<<ExitRequested>>"),
-            underline=0,
-            bg=_C_EXIT,
-            fg="#FFFFFF",
-            font=_F_BTN,
-            relief=tk.FLAT,
-            activebackground=_C_EXIT_H,
-            activeforeground="#FFFFFF",
+            fg_color=_C_EXIT,
+            hover_color=_C_EXIT_H,
+            text_color="#FFFFFF",
+            font=ctk.CTkFont("Segoe UI", 11, weight="bold"),
+            corner_radius=8,
+            height=42,
+            width=230,
             cursor="hand2",
-            padx=22,
-            pady=9,
-            bd=0,
         )
         btn_exit.pack(side=tk.TOP, pady=(0, 8))
         self._btn_exit = btn_exit
 
-        # Botón de donaciones "Cómprame una cerveza" (color ámbar, fijo)
-        btn_donate = tk.Button(
+        # Botón de donaciones "Cómprame una cerveza" — ámbar, esquinas redondeadas
+        btn_donate = ctk.CTkButton(
             self.root,
             text=self.i18n.t("btn_donate"),
             command=lambda: webbrowser.open(_DONATE_URL),
-            bg="#F5A623",
-            fg="#FFFFFF",
-            font=_F_SMALL,
-            activebackground="#D4891A",
-            activeforeground="#FFFFFF",
-            relief=tk.FLAT,
+            fg_color="#F5A623",
+            hover_color="#D4891A",
+            text_color="#FFFFFF",
+            font=ctk.CTkFont("Segoe UI", 9),
+            corner_radius=6,
+            height=30,
+            width=190,
             cursor="hand2",
-            padx=12,
-            pady=5,
-            bd=0,
         )
         btn_donate.pack(side=tk.BOTTOM, pady=(0, 4))
 
@@ -516,8 +517,10 @@ class WhatsAppSchedulerApp:
     # =========================================================================
 
     def _toggle_theme(self) -> None:
-        """Alterna entre tema claro y oscuro, actualiza todos los widgets y guarda la preferencia."""
+        """Alterna entre tema claro y oscuro, actualiza widgets tk y CTk, y guarda la preferencia."""
         new_theme = "dark" if self._active_theme == "light" else "light"
+        # Actualizar modo de apariencia en CustomTkinter (afecta todos los CTkButton, CTkFrame, etc.)
+        ctk.set_appearance_mode("dark" if new_theme == "dark" else "light")
         self._apply_theme(new_theme)
 
     def _apply_theme(self, theme_name: str | None = None) -> None:
@@ -551,11 +554,11 @@ class WhatsAppSchedulerApp:
                                     insertbackground=th["text_log"],
                                     selectbackground=th["btn_p"])
 
-        # Botones principales
+        # Botones principales (CTkButton usa fg_color/hover_color en vez de bg/activebackground)
         if hasattr(self, "_btn_schedule"):
-            self._btn_schedule.configure(bg=th["btn_p"], activebackground=th["btn_p_h"])
+            self._btn_schedule.configure(fg_color=th["btn_p"], hover_color=th["btn_p_h"])
         if hasattr(self, "_btn_exit"):
-            self._btn_exit.configure(bg=th["btn_s"], activebackground=th["btn_s_h"])
+            self._btn_exit.configure(fg_color=th["btn_s"], hover_color=th["btn_s_h"])
 
         # Barra superior y sus hijos
         if hasattr(self, "_top_frame"):

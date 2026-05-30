@@ -1,5 +1,12 @@
 # Changelog
 
+## [v8.4.0] — 2026-05-30
+### Added
+- Migracion a CustomTkinter: botones Programar, Salir y Donar con esquinas redondeadas
+- Modo oscuro/claro real via ctk.set_appearance_mode() en todos los CTkButton
+- Toggle de tema actualiza simultaneamente widgets tk (color) y CTk (apariencia)
+- ctk.set_default_color_theme("green") para tema verde coherente con la marca
+
 ## [v8.3.3] — 2026-05-30
 ### Fixed
 - Selectores del compositor WA Web 2025: aria-label sin nombre de contacto
