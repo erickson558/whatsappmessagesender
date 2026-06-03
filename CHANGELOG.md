@@ -1,5 +1,14 @@
 # Changelog
 
+## [v8.5.0] — 2026-06-03
+### Fixed
+- Keepalive "ciego": ahora detecta QR / sesion expirada de WhatsApp ademas de desconexion CDP; dispara hard-recover automatico al detectar pantalla de login tras dias de ejecucion
+- Mensajes repetitivos ya no se abandonan permanentemente al agotar 20 reintentos; se reprograman con cooldown de 5 min para que el ciclo continue indefinidamente
+- Cuadro de busqueda de contacto: presiona Escape antes de enfocar para cerrar paneles/overlays abiertos; usa triple_click como limpieza mas robusta junto a Ctrl+A+Delete
+- Instancia Playwright validada con health-check antes de reusar; si esta stale tras dias de uso se recrea automaticamente evitando bloqueos silenciosos
+### Added
+- Skill /diagnose-bot: diagnostica el estado de la conexion WhatsApp (keepalive, retries, search-box, playwright) y produce reporte de salud con recomendaciones de accion
+
 ## [v8.4.0] — 2026-05-30
 ### Added
 - Migracion a CustomTkinter: botones Programar, Salir y Donar con esquinas redondeadas

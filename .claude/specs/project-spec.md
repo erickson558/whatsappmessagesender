@@ -1,7 +1,7 @@
 # Especificacion del Proyecto: WhatsApp Message Sender
 
 > Documento vivo de Spec-Driven Development. Actualizar con cada cambio de version mayor o menor.
-> Version del documento alineada con: `VERSION` — **v8.2.1**
+> Version del documento alineada con: `VERSION` — **v8.5.0**
 
 ---
 
@@ -26,7 +26,7 @@ Usuarios individuales o de pequenas empresas en Windows que necesitan automatiza
 
 | Campo | Valor |
 |---|---|
-| Version | **v8.2.1** |
+| Version | **v8.5.0** |
 | Rama principal | `main` |
 | Plataforma soportada | Windows 10 / 11 (x64) |
 | Python requerido (dev) | 3.12 |
@@ -46,7 +46,7 @@ Usuarios individuales o de pequenas empresas en Windows que necesitan automatiza
 | `scripts/bump_version.py` | Sincronizacion de version entre `VERSION`, `config.example.json` y `config.json` |
 | `build_exe.ps1` | Compilacion local del ejecutable |
 
-### Capacidades actuales (v8.2.1)
+### Capacidades actuales (v8.5.0)
 
 - Hasta **4 grupos de trabajo** con hasta **4 mensajes cada uno** (16 mensajes configurables en total).
 - Modos de repeticion por mensaje: Ninguno, Diario, Semanal (dias seleccionables), Mensual.
@@ -58,6 +58,11 @@ Usuarios individuales o de pequenas empresas en Windows que necesitan automatiza
 - Soporte multi-idioma inicial (base implementada en v8.2.0).
 - Boton de donacion (v8.2.0).
 - Logs rotativos con rutas absolutas, tolerantes al path de lanzamiento del `.exe`.
+- **[V8.5.0]** Keepalive detecta QR/sesion-expirada ademas de desconexion CDP.
+- **[V8.5.0]** Mensajes repetitivos no se abandonan permanentemente al agotar retries: se reprograman con cooldown de 5 min.
+- **[V8.5.0]** Cuadro de busqueda de contacto: Escape previo + triple_click para limpieza robusta.
+- **[V8.5.0]** Instancia Playwright validada antes de reusar (deteccion de instancia stale tras dias de uso).
+- **[V8.5.0]** Skill `/diagnose-bot` para diagnosticar y verificar el estado de la conexion WhatsApp.
 
 ---
 

@@ -314,6 +314,11 @@ class BrowserWorker(threading.Thread):
             if not self._is_context_alive() or not self._is_page_alive():
                 raise RuntimeError("context/page no disponible")
             self.page.evaluate("() => document.readyState")
+            # FIX V8.5.0: tras dias de ejecucion, WhatsApp puede mostrar QR o
+            # "telefono desconectado" aunque CDP siga vivo. El keepalive estaba
+            # "ciego" a este estado y los mensajes agotaban retries sin recuperarse.
+            if self._looks_like_login_required():
+                raise RuntimeError("WhatsApp Web requiere reautenticacion (QR detectado en keepalive)")
         except Exception as error:
             self.log(f"[KEEPALIVE] Conexion CDP inestable: {error}")
             if self.relaunch_on_disconnect and not self._stop_event.is_set():
@@ -500,6 +505,20 @@ class BrowserWorker(threading.Thread):
         Pasar un valor menor (ej 30000) permite detectar browsers zombie rapidamente.
         """
         from playwright.sync_api import sync_playwright
+
+        # FIX V8.5.0: tras dias de uso continuo, la instancia de sync_playwright
+        # puede quedar stale (el proceso interno de Playwright puede haberse caido).
+        # Validamos accediendo a un atributo; si lanza excepcion, recreamos la instancia.
+        if self.playwright is not None:
+            try:
+                _ = self.playwright.chromium  # health check rapido
+            except Exception:
+                self.log("[CDP] Instancia Playwright stale detectada. Reiniciando instancia...")
+                try:
+                    self.playwright.stop()
+                except Exception:
+                    pass
+                self.playwright = None
 
         if self.playwright is None:
             self.playwright = sync_playwright().start()
@@ -997,14 +1016,31 @@ class BrowserWorker(threading.Thread):
         page = self.page
         if page is None:
             return None
+        # FIX V8.5.0: cerrar cualquier panel o resultado de busqueda abierto antes
+        # de enfocar el campo global. Sin esto, el campo puede estar en modo "busqueda
+        # activa" y los resultados del tipo anterior contaminan la nueva busqueda.
+        try:
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(150)
+        except Exception:
+            pass
         for selector in (
             '[aria-label="Search input textbox"]',
             "[data-testid='chat-list-search'] div[contenteditable='true']",
+            "div[data-testid='chat-list-search']",
+            "div[aria-label='Search input textbox']",
         ):
             try:
                 root = page.locator(selector).first
                 root.wait_for(state="visible", timeout=4000)
                 root.click(force=True)
+                page.wait_for_timeout(100)
+                # Triple click selecciona todo el contenido (mas confiable que Ctrl+A en contenteditable)
+                try:
+                    root.triple_click(timeout=1000)
+                    page.keyboard.press("Delete")
+                except Exception:
+                    pass
                 page.keyboard.press("Control+A")
                 page.keyboard.press("Delete")
                 return root
@@ -1014,6 +1050,12 @@ class BrowserWorker(threading.Thread):
             name_re = re.compile(r"(Buscar|Search|Search or start|Buscar o empezar)", re.I)
             root = page.get_by_role("textbox", name=name_re).first
             root.click(force=True)
+            page.wait_for_timeout(100)
+            try:
+                root.triple_click(timeout=1000)
+                page.keyboard.press("Delete")
+            except Exception:
+                pass
             page.keyboard.press("Control+A")
             page.keyboard.press("Delete")
             return root
@@ -1024,14 +1066,29 @@ class BrowserWorker(threading.Thread):
         page = self.page
         if page is None:
             return
+        # FIX V8.5.0: presionar Escape primero cierra el panel de busqueda activo
+        # (resultados desplegados) antes de limpiar el campo. Evita que un overlay
+        # abierto interfiera con clicks posteriores en la UI de WhatsApp.
+        try:
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(120)
+        except Exception:
+            pass
         for selector in (
             '[aria-label="Search input textbox"]',
             "[data-testid='chat-list-search'] div[contenteditable='true']",
+            "div[data-testid='chat-list-search']",
+            "div[aria-label='Search input textbox']",
         ):
             try:
                 root = page.locator(selector).first
                 if root.is_visible(timeout=250):
                     root.click(force=True)
+                    try:
+                        root.triple_click(timeout=800)
+                        page.keyboard.press("Delete")
+                    except Exception:
+                        pass
                     page.keyboard.press("Control+A")
                     page.keyboard.press("Delete")
                     try:

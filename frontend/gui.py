@@ -1267,6 +1267,25 @@ class WhatsAppSchedulerApp:
         retries = int(msg.get("_delivery_retries", 0) or 0)
         if retries >= max_attempts:
             self.update_status(self.i18n.t("status_exhausted", reason=reason, max=max_attempts))
+            # FIX V8.5.0: mensajes con repeticion (o grupos con items repetitivos) no
+            # deben abandonarse permanentemente al agotar retries. Los reiniciamos con
+            # un cooldown de 5 min para no generar spam, luego el ciclo normal sigue.
+            # Mensajes de un solo disparo (repeat==Ninguno, not is_group) se descartan.
+            repeat = msg.get("repeat", "Ninguno")
+            is_group = msg.get("is_group", False)
+            has_repeating_items = is_group and any(
+                item.get("repeat", "Ninguno") != "Ninguno"
+                for item in (msg.get("items") or [])
+            )
+            if repeat not in (None, "Ninguno") or has_repeating_items:
+                msg["_delivery_retries"] = 0
+                cooldown_sec = 300  # 5 minutos antes de volver a intentar
+                msg["datetime"] = datetime.now() + timedelta(seconds=cooldown_sec)
+                self.log_message(
+                    f"[RETRY] Reintentos agotados para '{msg.get('contact', '')}'. "
+                    f"Reprogramando en {cooldown_sec}s (no se abandona por ser repetitivo)."
+                )
+                self._schedule_message(msg)
             return False
         msg["_delivery_retries"] = retries + 1
         msg["datetime"] = datetime.now() + timedelta(seconds=max(5, delay_seconds))
