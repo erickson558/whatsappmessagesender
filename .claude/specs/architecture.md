@@ -1,9 +1,9 @@
 # Architecture Decision Records — WhatsApp Message Scheduler
 
 Proyecto: WhatsApp Message Scheduler
-Version de referencia: V8.2.1
+Version de referencia: V8.5.0
 Responsable: erickson558
-Fecha: 2026-05-30
+Fecha: 2026-06-03
 
 ---
 
@@ -38,9 +38,9 @@ Los modulos de soporte (`config_store.py`, `i18n.py`, `logging_service.py`) pert
 
 ---
 
-## ADR-002 — Tkinter como Framework de GUI
+## ADR-002 — Tkinter como Framework de GUI (con CustomTkinter hibrido desde V8.4.0)
 
-**Estado:** Aceptado
+**Estado:** Aceptado (evolucionado)
 
 ### Contexto
 
@@ -48,8 +48,9 @@ Se requeria una GUI de escritorio para Windows que permitiera a usuarios no tecn
 
 ### Decision
 
-Se selecciona **Tkinter** (con el paquete complementario `tkcalendar` para el selector de fecha) como framework de GUI, por las siguientes razones:
+Se selecciona **Tkinter** (con el paquete complementario `tkcalendar` para el selector de fecha) como framework de GUI base. Desde V8.4.0 se adopta adicionalmente **CustomTkinter** en un enfoque hibrido: los botones principales usan `CTkButton` para esquinas redondeadas y soporte nativo de modo oscuro/claro, mientras que el resto de la UI permanece en Tkinter clasico. Ver ADR-008 para la decision detallada de la adopcion de CustomTkinter.
 
+Razones para la seleccion original de Tkinter:
 - Viene incluido en la distribucion estandar de CPython (sin dependencia extra en produccion).
 - Integra nativamente con el bucle de eventos de Python, simplificando la programacion temporal via `root.after()`.
 - Compatibilidad directa con PyInstaller: genera ejecutables `.exe` sin dependencias de DLLs externas.
@@ -64,12 +65,13 @@ Se implementa el patron de generacion (`_schedule_generation`) para invalidar ca
 - Distribucion como ejecutable unico: `enviar_whatsapp.exe` sin instaladores ni dependencias del sistema.
 - La API `root.after()` permite programar mensajes futuros de forma precisa sin hilos adicionales.
 - `tkcalendar.DateEntry` provee un selector de fecha nativo con aspecto adecuado.
+- Con CTk (V8.4.0+): botones modernos con esquinas redondeadas y toggle de modo oscuro/claro real.
 
 **Negativas:**
-- Tkinter tiene limitaciones esteticas comparado con Qt o frameworks modernos; la apariencia es basica.
+- Tkinter clasico tiene limitaciones esteticas; mitigado parcialmente con CustomTkinter en elementos principales.
 - El sistema `after()` no es preciso a nivel de milisegundos; puede desfasar ligeramente en sistemas bajo carga.
-- No existe soporte nativo para estilos oscuros; el tema visual queda sujeto al SO.
-- `tkcalendar` es una dependencia adicional que requiere empaquetarse explicitamente en el `.spec` de PyInstaller (`collect_data_files('tkcalendar')`).
+- `tkcalendar` es una dependencia adicional que requiere empaquetarse explicitamente en el `.spec` de PyInstaller.
+- La mezcla Tkinter/CTk requiere `_theme_children()` recursivo para mantener coherencia visual entre los dos sistemas de widgets.
 
 ---
 
@@ -247,3 +249,78 @@ El workflow usa `permissions: contents: write` (minimo necesario) y `concurrency
 - Cualquier push a `main` dispara un intento de release; si `VERSION` no se actualizo, el workflow falla (comportamiento intencionado pero puede sorprender).
 - El runner `windows-latest` tiene un browser preinstalado pero la sesion de WhatsApp no puede probarse en CI (no hay pruebas de integracion automatizadas).
 - La dependencia de `GITHUB_TOKEN` y permisos de escritura en el repositorio debe gestionarse correctamente en entornos fork o con restricciones de seguridad adicionales.
+
+---
+
+## ADR-008 — CustomTkinter para Componentes Visuales Mejorados
+
+**Estado:** Aceptado (V8.4.0)
+
+### Contexto
+
+La GUI en Tkinter puro tenia aspecto anticuado (botones rectangulares planos, sin soporte real de modo oscuro). Los usuarios esperan interfaces modernas con esquinas redondeadas y soporte de tema oscuro. Refactorizar toda la GUI a Qt/wxPython tendria un costo altisimo y romperia la integracion con `root.after()`. Se evaluaron: PyQt6, tkinter-styled, ttkbootstrap, y CustomTkinter.
+
+### Decision
+
+Se adopta **CustomTkinter 5.2.2** en modo hibrido para modernizar exclusivamente los elementos de accion principal (botones "Programar", "Salir", "Donar"). La decision de mantener el resto en Tkinter clasico se baso en:
+
+- Migracion minima de riesgo: solo 3 widgets criticos cambian de tipo; el arbol de widgets principal (grupos de mensajes, listboxes, labels, notebook) permanece sin cambios.
+- `ctk.set_appearance_mode("dark"|"light")` sincroniza todos los widgets CTk con un solo comando; los widgets Tkinter se actualizan via `_theme_children()`.
+- `ctk.set_default_color_theme("green")` establece el color base verde coherente con la marca WhatsApp antes de crear cualquier widget CTk.
+- CustomTkinter ya es compatible con PyInstaller via el hook estandar `hook-customtkinter.py`.
+- `Pillow` (requerido por CTk para manejo de imagenes en iconos) ya estaba en el entorno del proyecto.
+
+El sistema de temas usa el diccionario `_THEMES` con paletas "light" y "dark" aplicadas via `_theme_children()` para widgets Tkinter y via `ctk.set_appearance_mode()` para widgets CTk.
+
+### Consecuencias
+
+**Positivas:**
+- Botones modernos con esquinas redondeadas, colores hover, y cursor hand2 sin CSS ni recursos externos.
+- Toggle de modo oscuro/claro en tiempo real sin reiniciar la aplicacion.
+- La preferencia de tema persiste en `config.json` entre sesiones.
+- La migracion fue no-invasiva: el codigo de logica de scheduling y backend no cambio.
+
+**Negativas:**
+- Nueva dependencia `customtkinter==5.2.2` y `Pillow` en `requirements.txt`.
+- La coexistencia de widgets Tkinter y CTk requiere `_theme_children()` para mantener coherencia; si se agregan nuevos widgets CTk, deben excluirse del recorrido recursivo (chequeo `type.__name__.startswith("CTk")`).
+- CustomTkinter tiene su propio ciclo de mantenimiento; actualizaciones mayores pueden romper la API de configuracion de colores.
+- El boton de donacion (ambar) debe excluirse explicitamente del restyle recursivo para no ser sobreescrito por el tema activo.
+
+---
+
+## ADR-009 — Estrategia de Confiabilidad para Ejecucion de Largo Plazo
+
+**Estado:** Aceptado (V8.5.0)
+
+### Contexto
+
+Tras dias de ejecucion continua sin reiniciar la aplicacion, el bot dejaba de enviar mensajes. El diagnostico identifico cuatro causas raiz independientes: (1) keepalive que no detectaba la pantalla de QR/sesion-expirada de WhatsApp Web; (2) mensajes repetitivos que se abandonaban permanentemente al agotar 20 reintentos; (3) el cuadro de busqueda de contacto que no se limpiaba correctamente si habia un overlay/panel de busqueda activo; (4) la instancia Playwright que quedaba stale tras dias de uso y no se detectaba.
+
+### Decision
+
+Se implementan cuatro mejoras independientes, cada una resolviendo una causa raiz especifica:
+
+**1. Keepalive con deteccion de sesion expirada:**
+Se agrega la llamada `_looks_like_login_required()` dentro del bloque try del keepalive. Si retorna True, se lanza excepcion y se dispara `_hard_recover("keepalive")`. Antes solo se detectaba desconexion CDP (evaluando `document.readyState`), que retorna "complete" incluso con el QR visible.
+
+**2. Mensajes repetitivos nunca se abandonan:**
+En `_retry_message_delivery`, cuando `retries >= max_attempts`, se verifica si el mensaje tiene `repeat != "Ninguno"` o si es un grupo con items repetitivos. En ese caso se reinicia el contador y se reprograma con cooldown de 300 s en lugar de descartar. Mensajes de un solo disparo se descartan normalmente.
+
+**3. Cuadro de busqueda: limpieza robusta:**
+`_focus_global_search()` y `_clear_global_search()` presionan `Escape` antes de cualquier accion para cerrar paneles de busqueda activos. Se agrega `triple_click()` como metodo de seleccion mas confiable que `Ctrl+A` en elementos `contenteditable`. Se agregan selectores CSS adicionales para mayor compatibilidad con futuras versiones de WhatsApp Web.
+
+**4. Playwright stale: health-check antes de reusar:**
+`_connect_over_cdp()` accede a `self.playwright.chromium` antes de usarlo. Si lanza excepcion, se detiene la instancia invalida y se crea una nueva. Sin este check, una instancia stale causaria fallos silenciosos que solo se manifestaban tras horas de degradacion.
+
+### Consecuencias
+
+**Positivas:**
+- El bot puede ejecutarse indefinidamente sin intervencion manual en condiciones normales (sin QR requerido).
+- Los mensajes diarios/semanales/mensuales nunca se pierden permanentemente, incluso tras periodos de inestabilidad.
+- La busqueda de contactos es mas robusta frente a estados intermedios de la UI de WhatsApp Web.
+- La instancia Playwright se auto-sana sin requerir reinicio de la aplicacion.
+
+**Negativas:**
+- El keepalive ahora es mas costoso (agrega una verificacion DOM adicional cada 60 s). El impacto es despreciable.
+- El cooldown de 5 min al agotar retries puede causar un breve retraso en la recuperacion tras un fallo prolongado.
+- `triple_click()` en Playwright es una operacion de mouse real; en sistemas muy lentos puede tener comportamiento inesperado si el elemento se mueve entre el triple click y la siguiente accion.

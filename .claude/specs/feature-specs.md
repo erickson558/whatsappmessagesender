@@ -1,11 +1,11 @@
 # Especificacion de Diseno de Software (SDD)
-# WhatsApp Message Scheduler — v8.2.1
+# WhatsApp Message Scheduler — v8.5.0
 
 **Proyecto:** Programador de Mensajes WhatsApp  
 **Autor:** Equipo de desarrollo  
-**Fecha:** 2026-05-30  
-**Version del documento:** 1.0  
-**Version de la aplicacion:** 8.2.1
+**Fecha:** 2026-06-03  
+**Version del documento:** 1.2  
+**Version de la aplicacion:** 8.5.0
 
 ---
 
@@ -14,11 +14,13 @@
 1. [Programacion de mensajes (4 grupos x 4 mensajes)](#1-programacion-de-mensajes)
 2. [Automatizacion de navegador (Playwright + CDP)](#2-automatizacion-de-navegador)
 3. [Recuperacion post-hibernacion](#3-recuperacion-post-hibernacion)
-4. [Soporte multi-idiomas (ES/EN)](#4-soporte-multi-idiomas)
+4. [Soporte multi-idiomas (ES/EN/PT)](#4-soporte-multi-idiomas)
 5. [Sistema de logging](#5-sistema-de-logging)
 6. [Persistencia de configuracion](#6-persistencia-de-configuracion)
-7. [[PENDIENTE] Boton Comprame una cerveza (PayPal)](#7-pendiente-boton-comprame-una-cerveza)
+7. [Boton Comprame una cerveza (PayPal)](#7-boton-comprame-una-cerveza)
 8. [[PENDIENTE] Multi-idioma extendido](#8-pendiente-multi-idioma-extendido)
+9. [GUI moderna con CustomTkinter (V8.4.0)](#9-gui-moderna-con-customtkinter)
+10. [Confiabilidad de largo plazo (V8.5.0)](#10-confiabilidad-de-largo-plazo)
 
 ---
 
@@ -220,32 +222,31 @@ Toda la configuracion de la aplicacion se almacena en un archivo `config.json` e
 
 ---
 
-## 7. [PENDIENTE] Boton "Comprame una cerveza" (PayPal)
+## 7. Boton "Comprame una cerveza" (PayPal)
 
-**Estado:** Pendiente
+**Estado:** Activo (implementado en V8.2.0, refinado en V8.4.0 con CTkButton)
 
 ### Descripcion
 
-Agregar un boton de donaciones voluntarias en la interfaz de la aplicacion que abra la pagina de donacion de PayPal del desarrollador en el navegador por defecto del sistema. El boton ya tiene su URL definida en el codigo fuente y su etiqueta traducida en ambos idiomas, pero falta integrarlo visualmente en la barra de controles de la UI de forma definitiva y consistente.
+Boton de donaciones voluntarias en la interfaz que abre la pagina PayPal del desarrollador en el navegador del sistema. Implementado como `CTkButton` con color ambar distintivo (`#F5A623`) en la barra de controles inferior de la ventana principal.
 
 **URL de donacion:** `https://www.paypal.com/donate/?hosted_button_id=ZABFRXC2P3JQN`
 
 ### Criterios de Aceptacion
 
-- Existe un boton visible en la barra de controles superiores de la aplicacion etiquetado "Comprame una cerveza" (ES) / "Buy me a beer" (EN).
+- Existe un boton visible etiquetado "Comprame una cerveza" (ES) / "Buy me a beer" (EN) / "Me pague uma cerveja" (PT).
 - Al hacer clic, se abre la URL de PayPal en el navegador por defecto del sistema (`webbrowser.open`).
-- El boton respeta el idioma activo: muestra la etiqueta traducida segun el catalogo i18n activo.
-- El boton no interfiere con las acciones de programacion ni con el flujo de cierre de la aplicacion.
-- La URL esta definida como constante `_DONATE_URL` en `frontend/gui.py` para facilitar su actualizacion futura.
-- El boton es visualmente distinguible (color, estilo o posicion) del resto de controles funcionales.
+- El boton respeta el idioma activo y usa la clave i18n `btn_donate`.
+- El boton no interfiere con las acciones de programacion ni con el flujo de cierre.
+- La URL esta definida como constante `_DONATE_URL` en `frontend/gui.py`.
+- El boton es visualmente distinguible mediante color ambar y tamano reducido (secundario).
 
 ### Notas de Implementacion
 
-- La constante `_DONATE_URL = "https://www.paypal.com/donate/?hosted_button_id=ZABFRXC2P3JQN"` ya existe en `frontend/gui.py` (linea 23).
-- Las claves i18n ya estan definidas en ambos catalogos: `"btn_donate": "Comprame una cerveza"` (ES) y `"btn_donate": "Buy me a beer"` (EN).
-- Accion sugerida: `lambda: webbrowser.open(_DONATE_URL)` — el modulo `webbrowser` ya esta importado en `gui.py`.
-- Ubicacion sugerida en la UI: barra superior de controles, junto al boton "Salir" o en un area separada al final de la barra.
-- Pendiente: integracion definitiva del boton en `_build_top_controls()` dentro de `frontend/gui.py`.
+- Constante: `_DONATE_URL = "https://www.paypal.com/donate/?hosted_button_id=ZABFRXC2P3JQN"` en `frontend/gui.py`.
+- Widget: `ctk.CTkButton` con `fg_color="#F5A623"`, `hover_color="#D4891A"`, `corner_radius=6`.
+- El sistema de temas preserva el color ambar del boton de donacion (excluido del restyle recursivo en `_theme_children`).
+- Ubicacion: zona inferior de la ventana principal, debajo de los botones "Programar" y "Salir".
 
 ---
 
@@ -277,4 +278,78 @@ Ampliar el soporte de idiomas mas alla de Espanol e Ingles, agregando catalogo(s
 
 ---
 
-*Fin del documento — WhatsApp Message Scheduler SDD v1.0*
+---
+
+## 9. GUI Moderna con CustomTkinter
+
+**Estado:** Activo (implementado en V8.4.0)
+
+### Descripcion
+
+Migracion parcial de la GUI de Tkinter puro a una combinacion hibrida Tkinter + CustomTkinter (`customtkinter==5.2.2`). Los botones principales (`Programar`, `Salir`, `Donar`) se renderizaron con `CTkButton` que ofrecen esquinas redondeadas, modos de apariencia (claro/oscuro) nativos, y tema de color verde coherente con la marca WhatsApp. El resto de la UI (grupos de mensajes, listboxes, labels) permanece en Tkinter clasico.
+
+### Criterios de Aceptacion
+
+- Los botones "Programar mensajes", "Salir" y "Comprame una cerveza" son `CTkButton` con esquinas redondeadas (`corner_radius=8`).
+- Existe un boton toggle "Oscuro/Claro" en la barra superior que alterna el modo de apariencia en tiempo real.
+- El modo de apariencia se persiste en `config.json` bajo `global.theme` ("light" o "dark").
+- Al activar modo oscuro: fondo `#1A1A2E`, logs `#0D1117` con texto verde, tabs y botones en paleta oscura.
+- Al activar modo claro: fondo `#F0F2F5`, estilo visual WhatsApp verde/blanco.
+- `ctk.set_default_color_theme("green")` se llama antes de crear cualquier widget CTk.
+- `ctk.set_appearance_mode()` sincroniza todos los widgets CTk al modo activo.
+- La funcion `_theme_children()` aplica el tema recursivamente a widgets Tkinter clasicos, preservando el color ambar del boton de donacion.
+- El selector de tema no provoca reinicios ni perdida de datos configurados.
+
+### Notas de Implementacion
+
+- Dependencia: `customtkinter==5.2.2`, `Pillow` (requerido por CTk para iconos).
+- Paletas de colores: diccionario `_THEMES` con entradas "light" y "dark" en `frontend/gui.py`.
+- Colores de marca: `_C_PRIMARY="#075E54"`, `_C_ACCENT="#128C7E"`, `_C_ACTION="#25D366"`.
+- `CTkButton` y `CTkFont` son los unicos widgets CTk usados; el resto del arbol es Tkinter puro.
+- `_theme_children(widget, th, area)` itera recursivamente y configura `bg/fg/activebackground` segun tipo de widget, saltando widgets cuyo `type.__name__` empiece por "CTk" (auto-tematizan via CTk).
+- ADR asociado: ADR-008.
+
+---
+
+## 10. Confiabilidad de Largo Plazo
+
+**Estado:** Activo (implementado en V8.5.0)
+
+### Descripcion
+
+Conjunto de cuatro mejoras independientes que resuelven la perdida de gestion del bot tras varios dias de ejecucion continua sin reiniciar la aplicacion. Los problemas raiz documentados: (1) keepalive ciego al QR, (2) retries que abandonan mensajes permanentemente, (3) cuadro de busqueda que no se limpia con overlay abierto, (4) instancia Playwright que se vuelve stale.
+
+### Criterios de Aceptacion
+
+#### 10.1 Keepalive con deteccion de sesion expirada
+- El ciclo de keepalive (cada `keepalive_interval_sec`, default 60 s) detecta no solo la desconexion CDP sino tambien la pantalla de login/QR de WhatsApp Web.
+- Si `_looks_like_login_required()` retorna True durante el keepalive, se dispara `_hard_recover("keepalive")` automaticamente.
+- El log muestra `[KEEPALIVE] Conexion CDP inestable: WhatsApp Web requiere reautenticacion` al detectar el QR.
+
+#### 10.2 Mensajes repetitivos nunca se abandonan
+- Cuando `_retry_message_delivery` agota `max_attempts` (default 20), los mensajes con `repeat != "Ninguno"` (o grupos con items repetitivos) NO se descartan.
+- En su lugar, se reinicia el contador de retries y se reprograma el mensaje con un cooldown de 300 s (5 min).
+- Mensajes de un solo disparo (`repeat == "Ninguno"`, no es grupo) se descartan normalmente al agotar retries.
+- El log indica: `[RETRY] Reintentos agotados para '<contacto>'. Reprogramando en 300s`.
+
+#### 10.3 Cuadro de busqueda de contacto: limpieza robusta
+- `_focus_global_search()` presiona `Escape` antes de enfocar el campo, cerrando cualquier panel de busqueda activo.
+- `_clear_global_search()` tambien presiona `Escape` antes de limpiar el campo.
+- Ambos metodos usan `triple_click()` antes de `Ctrl+A+Delete` para garantizar la seleccion completa del contenido del `contenteditable`.
+- Se agregan selectores CSS adicionales como fallback para mayor compatibilidad con futuras versiones de WhatsApp Web.
+
+#### 10.4 Instancia Playwright validada antes de reusar
+- `_connect_over_cdp()` ejecuta un health-check (`playwright.chromium`) antes de reusar la instancia existente.
+- Si el health-check lanza excepcion (instancia stale), se detiene la instancia invalida y se crea una nueva via `sync_playwright().start()`.
+- El log indica `[CDP] Instancia Playwright stale detectada. Reiniciando instancia...` cuando ocurre.
+
+### Notas de Implementacion
+
+- Archivos modificados: `backend/browser_worker.py` (keepalive, search-box, playwright health-check), `frontend/gui.py` (retry reprogram).
+- `_looks_like_login_required()` ya existia en `browser_worker.py` para detectar pantalla de QR; se reutilizo en keepalive.
+- El cooldown de 5 min al agotar retries evita spam de intentos cuando el sistema esta en un estado de falla persistente.
+- `triple_click()` es un metodo nativo de Playwright que selecciona todo el contenido de un elemento con un triple click del mouse.
+
+---
+
+*Fin del documento — WhatsApp Message Scheduler SDD v1.2*
