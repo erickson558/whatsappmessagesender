@@ -1,5 +1,10 @@
 # Changelog
 
+## [v8.7.6] — 2026-06-06
+### Fixed
+- CI: workflow Release fallaba en "Ensure tag does not exist yet" por dos causas: (1) `git fetch --tags --force` generaba archivos `.lock` stale en runner Windows (filesystem case-insensitive); reemplazado por `git ls-remote` que consulta el remoto sin writes locales. (2) `fetch-depth: 0` en el checkout descargaba todos los tags y también causaba lock conflicts; simplificado a checkout estándar sin fetch de historial completo.
+- CI: simplificado checkout — eliminado `fetch-depth: 0` y `fetch-tags: false`; el step `Create GitHub release --generate-notes` no requiere historial local completo (GitHub lo resuelve server-side).
+
 ## [v8.7.5] — 2026-06-06
 ### Docs
 - Agente `python-desktop-engineer`, skills `diagnose-bot` y `verify-selectors`, SDD `project-spec.md` actualizados con patrones de confiabilidad V8.7.4 (guard compose en `_clear_global_search`, `_ensure_chat_target` con `_is_compose_visible`, seleccion teclado-first, skill `/debug-wa-click`).
