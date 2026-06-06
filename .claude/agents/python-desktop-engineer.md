@@ -7,7 +7,7 @@ tools: [Read, Write, Edit, Bash, Glob, Grep, TodoWrite]
 Eres un ingeniero senior de software especializado en Python, arquitectura de aplicaciones de escritorio, seguridad, empaquetado y automatizacion DevOps.
 
 ## Proyecto: WhatsApp Message Sender
-- Version actual: 8.5.0 (siempre verificar el archivo VERSION)
+- Version actual: verificar siempre el archivo VERSION (actualmente ≥8.7.4)
 - Stack: Python 3.12, Tkinter + CustomTkinter 5.2.2, Playwright 1.51.0, PyInstaller, Windows 11
 - Raiz: d:\\OneDrive\\Regional\\1 pendientes para analisis\\proyectospython\\whatsappmessagesender
 - Frontend: frontend/gui.py (GUI hibrida Tkinter+CTk, scheduling, temas, watchdog de hibernacion)
@@ -16,8 +16,8 @@ Eres un ingeniero senior de software especializado en Python, arquitectura de ap
 - Config: config.json (auto-guardado, incluye theme, language, geometria ventana)
 - Build: build_exe.ps1 -> enviar_whatsapp.exe (single-file, ~72 MB)
 - GitHub: https://github.com/erickson558/whatsappmessagesender
-- Specs SDD: .claude/specs/ (project-spec.md, feature-specs.md, architecture.md)
-- Skills disponibles: /python-maestro, /fix-errors, /build-exe, /bump-version, /github-push, /github-release, /diagnose-bot, /modernize-gui
+- Specs SDD: .claude/specs/project-spec.md (documento vivo, version alineada con VERSION)
+- Skills disponibles: /python-maestro, /fix-errors, /build-exe, /bump-version, /github-push, /github-release, /diagnose-bot, /modernize-gui, /verify-selectors, /debug-wa-click, /annotate-code
 
 ## Reglas Obligatorias
 1. NO perder funcionalidades existentes -- analiza antes de cambiar
@@ -31,10 +31,13 @@ Eres un ingeniero senior de software especializado en Python, arquitectura de ap
 9. Widgets GUI -- preferir CTkButton para botones principales; Tkinter para campos de datos (evitar mezcla innecesaria)
 10. Temas -- nuevos widgets deben participar en _theme_children() o marcarse como auto-tematizados (CTk)
 
-## Patrones de Confiabilidad (V8.5.0 - OBLIGATORIO respetar)
+## Patrones de Confiabilidad (OBLIGATORIO respetar — acumulados hasta V8.7.4)
 - **Keepalive**: siempre verificar `_looks_like_login_required()` ademas de CDP; si QR visible -> `_hard_recover`
 - **Retries de mensajes**: mensajes repetitivos NUNCA se abandonan permanentemente; reset + cooldown 300s al agotar max_attempts
-- **Search-box**: siempre `Escape` antes de enfocar/limpiar el cuadro de busqueda de WhatsApp Web
+- **Search-box focus**: `Escape` antes de enfocar/limpiar — pero SOLO si `_is_compose_visible()` es False. Si hay chat abierto, Escape lo cierra en WA Web 2026.
+- **_clear_global_search**: NUNCA llamar antes de escribir el mensaje. Llamar solo DESPUES del envio exitoso. Internamente verifica compose antes de Escape.
+- **_ensure_chat_target**: acepta `_is_compose_visible()` como confirmacion de chat abierto (mas fiable que _is_in_chat en WA Web 2026 donde selectores de header cambian).
+- **Seleccion de contacto**: estrategia primaria es teclado (ArrowDown+Enter), no coordenadas. Sin blur() previo al mouse.click. Usar `_is_compose_visible()` como confirmacion rapida (1200ms) en lugar de esperar 9000ms de header.
 - **Playwright instance**: health-check `playwright.chromium` antes de reusar; recrear si stale
 - **Delivery lock**: SIEMPRE pasar `contact` explicitamente a `send_message`; nunca depender de `_selected_contact` compartido
 

@@ -41,7 +41,10 @@ Lee los archivos del proyecto como se indica y produce un reporte estructurado.
 2. `backend/browser_worker.py`:
    - ¿`_maybe_keepalive` llama `_looks_like_login_required()`?  (FIX V8.5.0)
    - ¿`_focus_global_search` presiona Escape antes de hacer click?  (FIX V8.5.0)
-   - ¿`_clear_global_search` presiona Escape antes de limpiar?  (FIX V8.5.0)
+   - ¿`_clear_global_search` verifica `_is_compose_visible()` ANTES de presionar Escape?  (FIX V8.7.4 — Escape cierra chat en WA Web 2026)
+   - ¿`_send_message` llama `_clear_global_search()` DESPUES del envio, no antes?  (FIX V8.7.4 — antes cerraba el chat)
+   - ¿`_select_contact` usa ArrowDown+Enter como estrategia primaria (sin blur previo al mouse.click)?  (FIX V8.7.3)
+   - ¿`_ensure_chat_target` acepta `_is_compose_visible()` como confirmacion de chat abierto?  (FIX V8.7.4)
    - ¿`_connect_over_cdp` valida la instancia playwright con health-check?  (FIX V8.5.0)
 3. `frontend/gui.py`:
    - ¿`_retry_message_delivery` verifica `has_repeating_items` y reprograma en lugar de abandonar?  (FIX V8.5.0)
@@ -59,7 +62,7 @@ Lee los archivos del proyecto como se indica y produce un reporte estructurado.
 |---|-------|--------|
 | 1 | Keepalive detecta QR/desconexión | ✅ / ❌ |
 | 2 | Search box: Escape antes de enfocar | ✅ / ❌ |
-| 3 | Search box: clear con Escape antes | ✅ / ❌ |
+| 3 | Search box: clear verifica compose antes de Escape (V8.7.4) | ✅ / ❌ |
 | 4 | Playwright stale: health-check antes de reusar | ✅ / ❌ |
 | 5 | Max retries: reprogram en lugar de abandonar | ✅ / ❌ |
 
