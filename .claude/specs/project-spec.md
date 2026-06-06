@@ -1,7 +1,7 @@
 # Especificacion del Proyecto: WhatsApp Message Sender
 
 > Documento vivo de Spec-Driven Development. Actualizar con cada cambio de version mayor o menor.
-> Version del documento alineada con: `VERSION` — **v8.6.0**
+> Version del documento alineada con: `VERSION` — **v8.6.1**
 
 ---
 
@@ -26,7 +26,7 @@ Usuarios individuales o de pequenas empresas en Windows que necesitan automatiza
 
 | Campo | Valor |
 |---|---|
-| Version | **v8.6.0** |
+| Version | **v8.6.1** |
 | Rama principal | `main` |
 | Plataforma soportada | Windows 10 / 11 (x64) |
 | Python requerido (dev) | 3.12 |
@@ -46,7 +46,7 @@ Usuarios individuales o de pequenas empresas en Windows que necesitan automatiza
 | `scripts/bump_version.py` | Sincronizacion de version entre `VERSION`, `config.example.json` y `config.json` |
 | `build_exe.ps1` | Compilacion local del ejecutable |
 
-### Capacidades actuales (v8.6.0)
+### Capacidades actuales (v8.6.1)
 
 - Hasta **4 grupos de trabajo** con hasta **4 mensajes cada uno** (16 mensajes configurables en total).
 - Modos de repeticion por mensaje: Ninguno, Diario, Semanal (dias seleccionables), Mensual.
@@ -64,6 +64,7 @@ Usuarios individuales o de pequenas empresas en Windows que necesitan automatiza
 - **[V8.5.0]** Instancia Playwright validada antes de reusar (deteccion de instancia stale tras dias de uso).
 - **[V8.5.0]** Skill `/diagnose-bot` para diagnosticar y verificar el estado de la conexion WhatsApp.
 - **[V8.6.0]** Seleccion de contacto robusta para WA Web 2025: nuevos selectores del panel de busqueda (`search-composition-list`, `default-search-results`), soporte `role='row'`/`role='listitem'`, espera de resultados extendida a 900 ms, nuevos selectores de header y fallback de teclado ArrowDown+Enter si los clicks no confirman apertura del chat.
+- **[V8.6.1]** Fix bug raiz seleccion de contacto: `_click_contact_js` con JavaScript DOM-walking hasta 12 niveles (independiente de data-testid); `_get_header_name` con fallback JS via `querySelector + TreeWalker`; `_select_contact` usa JS-click como estrategia primaria antes de Playwright.
 
 ---
 

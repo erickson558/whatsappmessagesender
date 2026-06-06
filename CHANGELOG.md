@@ -1,5 +1,12 @@
 # Changelog
 
+## [v8.6.1] — 2026-06-06
+### Fixed
+- Bug raíz selección de contacto: click en `span` no abría el chat porque el XPath de ancestro fallaba en WA Web 2025
+- Nuevo método `_click_contact_js`: usa JavaScript con DOM-walking (hasta 12 niveles) para encontrar el contenedor clickeable real; restringe búsqueda a `#pane-side` para no confundir spans del chat abierto
+- `_get_header_name`: fallback JavaScript con `querySelector('#main header')` + `TreeWalker` de texto; independiente de data-testid que WA Web puede cambiar; ahora `_wait_header` puede confirmar el chat correctamente
+- `_select_contact`: JS-click como estrategia primaria; XPath de ancestro ampliado con `@role='row'`, `@role='listitem'`, `@tabindex='0'` en el fallback Playwright
+
 ## [v8.6.0] — 2026-06-06
 ### Fixed
 - Seleccion de contacto: bot escribia nombre en busqueda pero no abria el chat ni enviaba el mensaje

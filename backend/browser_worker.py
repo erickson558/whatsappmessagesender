@@ -976,18 +976,35 @@ class BrowserWorker(threading.Thread):
                         return text
             except Exception:
                 continue
-        # WA Web 2025: buscar cualquier elemento con title en el header principal
+        # WA Web 2025: fallback JavaScript — lee texto visible del header principal.
+        # Independiente de data-testid o clases CSS que WhatsApp puede cambiar.
         try:
-            nodes = page.locator("header [title], #main header [title]").all()
-            for node in nodes[:8]:
-                try:
-                    if not node.is_visible(timeout=300):
-                        continue
-                    text = (node.get_attribute("title") or "").strip()
-                    if text and len(text) > 1:
-                        return text
-                except Exception:
-                    continue
+            js_text = page.evaluate("""
+                () => {
+                    // El header del chat abierto está en #main (no en el panel lateral)
+                    const mainHeader = document.querySelector('#main header')
+                        || document.querySelector('[data-testid="conversation-header"]')
+                        || document.querySelector('[data-testid="conversation-info-header"]');
+                    if (!mainHeader) return '';
+
+                    // Preferir atributo title no vacío y que no sea solo timestamp/números
+                    const withTitle = mainHeader.querySelectorAll('[title]');
+                    for (const el of withTitle) {
+                        const t = (el.getAttribute('title') || '').trim();
+                        if (t && t.length > 1 && !/^[\\d:\\s]+(am|pm)?$/i.test(t)) return t;
+                    }
+                    // Fallback: primer texto significativo encontrado en el header
+                    const walker = document.createTreeWalker(mainHeader, NodeFilter.SHOW_TEXT, null);
+                    let node;
+                    while ((node = walker.nextNode())) {
+                        const t = (node.textContent || '').trim();
+                        if (t && t.length > 1 && !/^[\\d:\\s]+(am|pm)?$/i.test(t)) return t;
+                    }
+                    return '';
+                }
+            """)
+            if js_text:
+                return js_text.strip()
         except Exception:
             pass
         try:
@@ -1256,6 +1273,78 @@ class BrowserWorker(threading.Thread):
         ranked.sort(key=lambda item: (-item[0], item[4]))
         return ranked
 
+    def _click_contact_js(self, contact: str) -> bool:
+        """Usa JavaScript para encontrar y clickear el contacto correcto en el panel lateral.
+
+        Busca span[title] que coincida con el contacto dentro del panel izquierdo (#pane-side),
+        luego sube el árbol DOM hasta encontrar el contenedor clickeable real (no el span).
+        Esto es resistente a cambios de data-testid en WA Web.
+        """
+        page = self.page
+        if page is None:
+            return False
+        try:
+            result = page.evaluate("""
+                (contact) => {
+                    const tokens = contact.toLowerCase().split(/\\s+/).filter(Boolean);
+                    const matches = (text) => text && tokens.length > 0 && tokens.every(t => text.toLowerCase().includes(t));
+
+                    // Buscar SOLO en el panel lateral izquierdo (no en el chat abierto)
+                    const pane = document.querySelector('#pane-side')
+                        || document.querySelector('[data-testid="pane-side"]')
+                        || document.querySelector('[aria-label="Chat list"]')
+                        || document.body;
+
+                    const spans = Array.from(pane.querySelectorAll('span[title]'));
+                    for (const span of spans) {
+                        if (!matches(span.title)) continue;
+
+                        // Subir el árbol DOM buscando el contenedor clickeable real
+                        let el = span;
+                        for (let i = 0; i < 12; i++) {
+                            el = el.parentElement;
+                            if (!el || el === document.body) break;
+                            const role = el.getAttribute('role');
+                            const testid = el.getAttribute('data-testid');
+                            const tabidx = el.getAttribute('tabindex');
+                            const tag = el.tagName;
+
+                            if (
+                                tag === 'LI' ||
+                                role === 'gridcell' || role === 'row' || role === 'listitem' || role === 'option' ||
+                                testid === 'cell-frame-container' || testid === 'conversation-item' ||
+                                (testid && testid.includes('list-item')) ||
+                                tabidx === '0'
+                            ) {
+                                el.click();
+                                el.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true, view: window}));
+                                return {clicked: true, name: span.title, method: tag + (role || testid || '')};
+                            }
+                        }
+                        // Fallback: subir exactamente 5 niveles desde el span
+                        let parent = span;
+                        for (let i = 0; i < 5; i++) {
+                            if (!parent.parentElement || parent.parentElement === document.body) break;
+                            parent = parent.parentElement;
+                        }
+                        if (parent !== span) {
+                            parent.click();
+                            parent.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true, view: window}));
+                            return {clicked: true, name: span.title, method: 'depth-5-fallback'};
+                        }
+                    }
+                    return {clicked: false, reason: 'no matching span found in pane-side'};
+                }
+            """, contact)
+            if result and result.get("clicked"):
+                self.log(f"[JS-CLICK] '{result.get('name')}' clickeado via JS ({result.get('method')})")
+                return True
+            if result:
+                self.log(f"[JS-CLICK] Sin resultado: {result.get('reason', 'unknown')}")
+        except Exception as error:
+            self.log(f"[JS-CLICK] Error: {error}")
+        return False
+
     def _wait_header(self, contact: str, timeout_ms: int = 9000) -> bool:
         end_time = time.time() + (timeout_ms / 1000.0)
         while time.time() < end_time:
@@ -1286,43 +1375,54 @@ class BrowserWorker(threading.Thread):
                     return False
 
             self._type_search_variants(contact)
+
+            # FIX V8.6.1: estrategia primaria — JS click con DOM walking.
+            # Más robusto que Playwright click porque no depende de data-testid específicos.
+            if self._click_contact_js(contact):
+                page.wait_for_timeout(700)
+                if self._wait_header(contact, timeout_ms=9000):
+                    self.log(f"Contacto '{contact}' abierto via JS-click (estrategia primaria).")
+                    return True
+                self.log("[JS-CLICK] Click ejecutado pero header no confirmado. Continua con fallbacks.")
+
+            # Fallback: Playwright click en candidatos rankeados
             ranked = self._rank_candidates(contact, self._collect_candidates())
 
             if not ranked:
-                # FIX V8.2.1: el fallback ArrowDown+Enter seleccionaba el primer
-                # resultado sin verificar que fuera el contacto correcto, causando
-                # envios al contacto equivocado. Ahora se lanza excepcion para que
-                # el llamante reintente con otro termino de busqueda.
                 self._clear_global_search()
                 raise TimeoutError(f"Sin candidatos en busqueda para contacto: {contact!r}")
-            else:
-                for attempt, (score, kind, name, node, idx) in enumerate(ranked[:4], start=1):
-                    self.log(f"[LIKE] intento {attempt}: '{name}' (score={score:.2f}, idx={idx})")
-                    try:
-                        node.scroll_into_view_if_needed(timeout=1200)
-                    except Exception:
-                        pass
-                    try:
-                        target = node
-                        if kind == "span":
-                            try:
-                                target = node.locator(
-                                    "xpath=ancestor::*[@data-testid='cell-frame-container' or @role='gridcell'][1]"
-                                ).first
-                            except Exception:
-                                target = node
-                        target.click(timeout=3000, force=True)
-                    except Exception:
-                        try:
-                            node.click(timeout=3000, force=True)
-                        except Exception:
-                            continue
-                    if self._wait_header(contact, timeout_ms=9000):
-                        self.log(f"Contacto seleccionado por coincidencia LIKE: {name}")
-                        return True
 
-            # FIX V8.6.0: fallback de teclado si ningún click confirmó el chat.
-            # ArrowDown selecciona el primer resultado; Enter lo abre.
+            for attempt, (score, kind, name, node, idx) in enumerate(ranked[:4], start=1):
+                self.log(f"[LIKE] intento {attempt}: '{name}' (score={score:.2f}, kind={kind})")
+                try:
+                    node.scroll_into_view_if_needed(timeout=1200)
+                except Exception:
+                    pass
+                try:
+                    target = node
+                    if kind in ("span",):
+                        # Buscar ancestro clickeable ampliando roles buscados
+                        for ancestor_selector in (
+                            "xpath=ancestor::*[@data-testid='cell-frame-container' or @role='gridcell' or @role='row' or @role='listitem' or @tabindex='0'][1]",
+                        ):
+                            try:
+                                candidate = node.locator(ancestor_selector).first
+                                candidate.wait_for(state="attached", timeout=400)
+                                target = candidate
+                                break
+                            except Exception:
+                                pass
+                    target.click(timeout=3000, force=True)
+                except Exception:
+                    try:
+                        node.click(timeout=3000, force=True)
+                    except Exception:
+                        continue
+                if self._wait_header(contact, timeout_ms=9000):
+                    self.log(f"Contacto seleccionado por coincidencia LIKE: {name}")
+                    return True
+
+            # Fallback de teclado: ArrowDown + Enter
             try:
                 page.keyboard.press("ArrowDown")
                 page.wait_for_timeout(250)
@@ -1336,7 +1436,7 @@ class BrowserWorker(threading.Thread):
 
             self._clear_global_search()
             if self._wait_header(contact, timeout_ms=9000):
-                self.log(f"Contacto seleccionado (confirmacion por header post-click): {contact}")
+                self.log(f"Contacto seleccionado (confirmacion post-click): {contact}")
                 return True
             raise TimeoutError("No se pudo confirmar apertura del chat objetivo.")
         except Exception as error:
