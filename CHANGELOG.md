@@ -1,5 +1,14 @@
 # Changelog
 
+## [v8.6.0] — 2026-06-06
+### Fixed
+- Seleccion de contacto: bot escribia nombre en busqueda pero no abria el chat ni enviaba el mensaje
+- `_collect_candidates`: agrega selectores de alta prioridad para panel de busqueda WA Web 2025 (`search-composition-list`, `default-search-results`, `pane-side`) y soporte para `role='row'`/`role='listitem'`
+- `_type_search_variants`: aumenta espera de resultados de 550 ms a 900 ms; agrega deteccion de `role='row'`/`role='listitem'` para confirmar que resultados aparecieron
+- `_get_header_name`: nuevos selectores `conversation-header`, `#main header span[title]`, `#main header [title]` y barrido de `[title]` en header para WA Web 2025
+### Added
+- Fallback de teclado en `_select_contact`: si ningun click confirmo apertura del chat, presiona ArrowDown+Enter para seleccionar el primer resultado de busqueda antes de limpiar el campo
+
 ## [v8.5.0] — 2026-06-03
 ### Fixed
 - Keepalive "ciego": ahora detecta QR / sesion expirada de WhatsApp ademas de desconexion CDP; dispara hard-recover automatico al detectar pantalla de login tras dias de ejecucion

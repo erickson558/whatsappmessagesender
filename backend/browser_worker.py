@@ -963,14 +963,33 @@ class BrowserWorker(threading.Thread):
             return ""
         for selector in (
             "header [data-testid='conversation-info-header'] span[title]",
+            "header [data-testid='conversation-header'] span[title]",
+            "#main header span[title]",
             "header span[title]",
+            "#main header [title]",
         ):
             try:
                 node = page.locator(selector).first
                 if node.is_visible(timeout=500):
-                    return (node.get_attribute("title") or node.inner_text(timeout=300) or "").strip()
+                    text = (node.get_attribute("title") or node.inner_text(timeout=300) or "").strip()
+                    if text:
+                        return text
             except Exception:
                 continue
+        # WA Web 2025: buscar cualquier elemento con title en el header principal
+        try:
+            nodes = page.locator("header [title], #main header [title]").all()
+            for node in nodes[:8]:
+                try:
+                    if not node.is_visible(timeout=300):
+                        continue
+                    text = (node.get_attribute("title") or "").strip()
+                    if text and len(text) > 1:
+                        return text
+                except Exception:
+                    continue
+        except Exception:
+            pass
         try:
             heading = page.get_by_role("heading").first
             if heading.is_visible(timeout=500):
@@ -1112,14 +1131,19 @@ class BrowserWorker(threading.Thread):
             page.keyboard.press("Control+A")
             page.keyboard.press("Delete")
             page.keyboard.type(variant, delay=10)
-            page.wait_for_timeout(550)
+            page.wait_for_timeout(900)
             try:
-                if page.get_by_role("gridcell").first.is_visible(timeout=350):
+                if page.get_by_role("gridcell").first.is_visible(timeout=400):
                     return
             except Exception:
                 pass
             try:
-                if page.locator("[data-testid='cell-frame-container']").first.is_visible(timeout=350):
+                if page.locator("[data-testid='cell-frame-container']").first.is_visible(timeout=400):
+                    return
+            except Exception:
+                pass
+            try:
+                if page.locator("[role='row'], [role='listitem']").first.is_visible(timeout=400):
                     return
             except Exception:
                 pass
@@ -1135,6 +1159,49 @@ class BrowserWorker(threading.Thread):
             value = re.sub(r"\s+\d{1,2}:\d{2}\s*(am|pm|a\.m\.|p\.m\.)?$", "", value, flags=re.I)
             return value.strip()
 
+        # WA Web 2025: resultados dentro del panel de búsqueda (prioridad alta)
+        try:
+            for idx, node in enumerate(page.locator(
+                "[data-testid='search-composition-list'] [data-testid='cell-frame-container'],"
+                " [data-testid='default-search-results'] [data-testid='cell-frame-container'],"
+                " [data-testid='pane-side'] [data-testid='cell-frame-container']"
+            ).all()):
+                try:
+                    name_node = node.locator("span[title]").first
+                    raw = name_node.get_attribute("title") or name_node.inner_text(timeout=200) or ""
+                except Exception:
+                    try:
+                        raw = node.get_attribute("aria-label") or node.inner_text(timeout=200) or ""
+                    except Exception:
+                        raw = ""
+                name = clean_name(raw)
+                if name:
+                    candidates.append(("search-result", name, node, 50 + idx))
+        except Exception:
+            pass
+
+        # WA Web 2025: role='row' o 'listitem' en panel de búsqueda
+        try:
+            for idx, node in enumerate(page.locator(
+                "[data-testid='search-composition-list'] [role='row'],"
+                " [data-testid='search-composition-list'] [role='listitem'],"
+                " [data-testid='default-search-results'] [role='row'],"
+                " [data-testid='default-search-results'] [role='listitem']"
+            ).all()):
+                try:
+                    name_node = node.locator("span[title]").first
+                    raw = name_node.get_attribute("title") or name_node.inner_text(timeout=200) or ""
+                except Exception:
+                    try:
+                        raw = node.get_attribute("aria-label") or node.inner_text(timeout=200) or ""
+                    except Exception:
+                        raw = ""
+                name = clean_name(raw)
+                if name:
+                    candidates.append(("search-listitem", name, node, 200 + idx))
+        except Exception:
+            pass
+
         try:
             for idx, node in enumerate(page.get_by_role("gridcell").all()):
                 try:
@@ -1143,7 +1210,7 @@ class BrowserWorker(threading.Thread):
                     raw = ""
                 name = clean_name(raw)
                 if name:
-                    candidates.append(("gridcell", name, node, idx))
+                    candidates.append(("gridcell", name, node, 1000 + idx))
         except Exception:
             pass
 
@@ -1159,7 +1226,7 @@ class BrowserWorker(threading.Thread):
                         raw = ""
                 name = clean_name(raw)
                 if name:
-                    candidates.append(("cell", name, node, 1000 + idx))
+                    candidates.append(("cell", name, node, 2000 + idx))
         except Exception:
             pass
 
@@ -1171,7 +1238,7 @@ class BrowserWorker(threading.Thread):
                     raw = ""
                 name = clean_name(raw)
                 if name:
-                    candidates.append(("span", name, node, 2000 + idx))
+                    candidates.append(("span", name, node, 3000 + idx))
         except Exception:
             pass
         return candidates
@@ -1253,6 +1320,19 @@ class BrowserWorker(threading.Thread):
                     if self._wait_header(contact, timeout_ms=9000):
                         self.log(f"Contacto seleccionado por coincidencia LIKE: {name}")
                         return True
+
+            # FIX V8.6.0: fallback de teclado si ningún click confirmó el chat.
+            # ArrowDown selecciona el primer resultado; Enter lo abre.
+            try:
+                page.keyboard.press("ArrowDown")
+                page.wait_for_timeout(250)
+                page.keyboard.press("Enter")
+                page.wait_for_timeout(700)
+                if self._wait_header(contact, timeout_ms=6000):
+                    self.log(f"Contacto seleccionado via teclado (ArrowDown+Enter): {contact}")
+                    return True
+            except Exception:
+                pass
 
             self._clear_global_search()
             if self._wait_header(contact, timeout_ms=9000):
