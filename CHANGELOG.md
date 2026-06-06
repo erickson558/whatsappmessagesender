@@ -1,5 +1,11 @@
 # Changelog
 
+## [v8.7.4] — 2026-06-06
+### Fixed
+- Bug crítico: `_send_message` cerraba el chat tras abrir el compose box. Causa: `_clear_global_search()` se llamaba dentro de `_send_message` ANTES de escribir el mensaje; su `page.keyboard.press("Escape")` interno cerraba el chat en WA Web 2026, y el click en el search box volvía al modo búsqueda. Solución: removida la llamada a `_clear_global_search()` del flujo pre-escritura; se mueve a después del envío exitoso para limpiar el search box sin interrumpir el chat.
+- Bug crítico: `_clear_global_search()` presionaba Escape incondicionalmente, cerrando cualquier chat abierto. Ahora verifica `_is_compose_visible()` antes de presionar Escape — solo lo hace cuando no hay chat activo.
+- `_ensure_chat_target()`: usaba `_is_in_chat()` como única verificación; en WA Web 2026 esta función puede dar falso negativo (selectores del header cambiados), causando que `_select_contact` se llamara de nuevo innecesariamente (navegando al search y cerrando el chat). Ahora acepta `_is_compose_visible()` como señal válida de que el chat está abierto.
+
 ## [v8.7.3] — 2026-06-06
 ### Fixed
 - Bug crítico: `_select_contact` revertía el chat al estado de búsqueda tras abrirlo. Causa raíz identificada en tres regresiones: (1) `blur()` en el search input antes del `page.mouse.click()` ocultaba el panel de resultados antes de que el click llegara al elemento, causando que las coordenadas apuntaran a área vacía; (2) falta de detección rápida de éxito — `_wait_header` esperaba hasta 9000ms sin verificar `_is_compose_visible()`, y durante esa espera las estrategias de fallback (ArrowDown+Enter) interrumpían el chat ya abierto; (3) ArrowDown sin guard de compose — si el chat estaba abierto pero el header no se detectaba, el ArrowDown lo navegaba a otro chat.

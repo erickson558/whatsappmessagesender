@@ -1186,14 +1186,14 @@ class BrowserWorker(threading.Thread):
         page = self.page
         if page is None:
             return
-        # FIX V8.5.0: presionar Escape primero cierra el panel de busqueda activo
-        # (resultados desplegados) antes de limpiar el campo. Evita que un overlay
-        # abierto interfiera con clicks posteriores en la UI de WhatsApp.
-        try:
-            page.keyboard.press("Escape")
-            page.wait_for_timeout(120)
-        except Exception:
-            pass
+        # V8.7.4: NO presionar Escape si el compose esta visible — en WA Web 2026
+        # Escape cierra el chat abierto. Solo presionar cuando no haya chat activo.
+        if not self._is_compose_visible():
+            try:
+                page.keyboard.press("Escape")
+                page.wait_for_timeout(120)
+            except Exception:
+                pass
         for selector in (
             '[aria-label="Search input textbox"]',
             "[data-testid='chat-list-search'] div[contenteditable='true']",
@@ -1705,14 +1705,17 @@ class BrowserWorker(threading.Thread):
         if not contact:
             return False
         for idx in range(attempts):
-            if self._is_in_chat(contact):
+            # V8.7.4: _is_compose_visible() como fallback primario — mas fiable que
+            # _is_in_chat en WA Web 2026 donde los selectores del header cambian.
+            # Si compose esta visible, asumimos que el chat ya esta abierto.
+            if self._is_in_chat(contact) or self._is_compose_visible():
                 return True
             self.log(
                 f"[ensure_chat_target] actual='{self._get_active_chat_from_composer()}', objetivo='{contact}', reintento {idx + 1}/{attempts}"
             )
             if not self._select_contact(contact):
                 time.sleep(0.2)
-        return self._is_in_chat(contact)
+        return self._is_in_chat(contact) or self._is_compose_visible()
 
     def _get_composer_for_contact(self):
         """Localiza el elemento contenteditable del compositor de mensajes en el footer.
@@ -1899,7 +1902,9 @@ class BrowserWorker(threading.Thread):
 
         try:
             node, container = self._get_composer_for_contact()
-            self._clear_global_search()
+            # V8.7.4: _clear_global_search() removida aqui — presionaba Escape que en
+            # WA Web 2026 cierra el chat recien abierto. La busqueda ya se limpia
+            # cuando WA Web abre el chat. Se limpiara despues del envio exitoso.
             self._prime_composer(node)
             outgoing_before = self._count_outgoing_messages()
             pre_send_text = self._read_composer_text(node, container)
@@ -1982,10 +1987,12 @@ class BrowserWorker(threading.Thread):
 
             if self._verify_message_sent(normalized_text, timeout_ms=9000):
                 self.log(f"Mensaje enviado a '{contact}'.")
+                self._clear_global_search()
                 return True
 
             if self._wait_outgoing_increment(outgoing_before, timeout_ms=6000):
                 self.log(f"Mensaje enviado a '{contact}' (verificacion por incremento de mensajes salientes).")
+                self._clear_global_search()
                 return True
 
             # Fallback anti-duplicados: si accion de envio fue ejecutada y el compositor quedo vacio, no reintentar.
@@ -1994,6 +2001,7 @@ class BrowserWorker(threading.Thread):
                 self.log(
                     f"Mensaje enviado a '{contact}' (confirmacion por compositor vacio; se evita reintento duplicado)."
                 )
+                self._clear_global_search()
                 return True
 
             self.status("No se verifico el envio en pantalla.")
