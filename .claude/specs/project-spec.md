@@ -1,7 +1,7 @@
 # Especificacion del Proyecto: WhatsApp Message Sender
 
 > Documento vivo de Spec-Driven Development. Actualizar con cada cambio de version mayor o menor.
-> Version del documento alineada con: `VERSION` — **v8.7.4**
+> Version del documento alineada con: `VERSION` — **v8.7.5**
 
 ---
 
@@ -26,7 +26,7 @@ Usuarios individuales o de pequenas empresas en Windows que necesitan automatiza
 
 | Campo | Valor |
 |---|---|
-| Version | **v8.7.4** |
+| Version | **v8.7.5** |
 | Rama principal | `main` |
 | Plataforma soportada | Windows 10 / 11 (x64) |
 | Python requerido (dev) | 3.12 |
