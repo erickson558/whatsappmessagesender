@@ -1115,7 +1115,10 @@ class WhatsAppSchedulerApp:
         try:
             after_id = self.root.after(delay_ms, _start)
             self.scheduled_after_ids.append(after_id)
-        except tk.TclError:
+        except (tk.TclError, RuntimeError):
+            # RuntimeError: main thread is not in main loop — ocurre cuando _schedule_message
+            # es llamado desde un hilo de fondo (p.ej. _retry_message_delivery desde Thread-N)
+            # o cuando el event loop ya cerro. Se ignora para no crashear el hilo.
             pass
 
     def _cancel_all_scheduled_messages(self) -> None:

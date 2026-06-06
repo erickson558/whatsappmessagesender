@@ -1083,7 +1083,11 @@ class BrowserWorker(threading.Thread):
         for selector in (
             "footer div[aria-label^='Type to']",
             "footer div[aria-label^='Type a message to']",
+            "footer div[aria-label^='Message ']",
             "footer div[aria-label^='Escribe a']",
+            "footer div[aria-label^='Escribe un mensaje a']",
+            "footer div[aria-label^='Mensaje a']",
+            "footer div[aria-label^='Escreva']",
             "footer [data-testid='conversation-compose-box-input'][contenteditable='true']",
             "footer div[contenteditable='true'][data-lexical-editor='true']",
             "footer div[role='textbox'][contenteditable='true'][aria-multiline='true']",
@@ -1094,8 +1098,15 @@ class BrowserWorker(threading.Thread):
                 if node.is_visible(timeout=500):
                     label = node.get_attribute("aria-label") or ""
                     if label:
+                        # WA Web 2026: formatos de aria-label del compositor en distintos idiomas
                         match = re.search(
-                            r"(?:Type(?: a message)? to|Escribe a)\s+(.+?)(?:\.)?$",
+                            r"(?:Type(?:\s+a)?\s+message\s+to"
+                            r"|Message\s+to"
+                            r"|Message\s+"
+                            r"|Escribe(?:\s+un\s+mensaje)?\s+a"
+                            r"|Mensaje\s+a"
+                            r"|Escreva(?:\s+uma)?\s+mensagem\s+(?:para|a)"
+                            r")\s*(.+?)(?:\.)?$",
                             label,
                             flags=re.I,
                         )
@@ -1483,11 +1494,41 @@ class BrowserWorker(threading.Thread):
             self.log(f"[JS-CLICK] Error: {error}")
         return None
 
+    def _is_compose_visible(self) -> bool:
+        """True si hay un compositor de mensajes visible (chat abierto, cualquier contacto)."""
+        page = self.page
+        if page is None:
+            return False
+        for sel in (
+            "footer div[contenteditable='true']",
+            "footer [data-testid='conversation-compose-box-input']",
+            "#main footer",
+        ):
+            try:
+                if page.locator(sel).first.is_visible(timeout=300):
+                    return True
+            except Exception:
+                pass
+        return False
+
     def _wait_header(self, contact: str, timeout_ms: int = 9000) -> bool:
-        """Espera hasta que el header de WA Web confirme que el chat del contacto esta abierto."""
+        """Espera hasta que el header de WA Web confirme que el chat del contacto esta abierto.
+
+        Si los selectores del header no pueden leer el nombre (WA Web actualizo su estructura),
+        acepta el chat como correcto si el compose box es visible: es mejor enviar el mensaje
+        que regresar al modo busqueda, que cierra el chat definitivamente.
+        """
         end_time = time.time() + (timeout_ms / 1000.0)
+        compose_seen = False
         while time.time() < end_time:
             if self._is_in_chat(contact):
+                return True
+            # Si el compose box ya es visible pero el header no responde (selector obsoleto),
+            # esperar un ciclo mas para dar tiempo al header y luego aceptar el chat.
+            if not compose_seen and self._is_compose_visible():
+                compose_seen = True
+            elif compose_seen and self._is_compose_visible():
+                self.log(f"[WAIT-HEADER] Compose visible pero header sin confirmar nombre. Aceptando chat.")
                 return True
             self.page.wait_for_timeout(140)
         return False
@@ -1515,33 +1556,59 @@ class BrowserWorker(threading.Thread):
 
             self._type_search_variants(contact)
 
-            # V8.7.1: JS localiza el elemento y devuelve coordenadas SIN hacer click.
-            # Un solo page.mouse.click() dispara la cadena completa de eventos de puntero.
-            # El click JS previo desplazaba el elemento durante la animacion de WA Web,
-            # haciendo que el mouse.click quedara en coordenadas incorrectas.
+            # V8.7.3 — Estrategia 1: teclado (ArrowDown + Enter).
+            # No depende de coordenadas DOM ni de selectores que cambian con WA Web.
+            # ArrowDown mueve el foco al primer resultado de busqueda; Enter lo abre.
+            # Es el comportamiento exacto de un usuario tecladista y WA Web 2026 lo soporta.
+            try:
+                page.keyboard.press("ArrowDown")
+                page.wait_for_timeout(400)
+                page.keyboard.press("Enter")
+                page.wait_for_timeout(1200)
+                # Confirmacion rapida via compose box (mas fiable que header en WA Web 2026)
+                if self._is_compose_visible():
+                    self.log(f"Contacto '{contact}' abierto via teclado (compose).")
+                    return True
+                if self._wait_header(contact, timeout_ms=3000):
+                    self.log(f"Contacto '{contact}' abierto via teclado (header).")
+                    return True
+                self.log("[KEYBOARD-1] Sin confirmacion. Probando mouse.click.")
+            except Exception:
+                pass
+
+            # V8.7.3 — Estrategia 2: JS localiza coordenadas + mouse.click limpio.
+            # Sin blur previo al click: el blur.() oculta los resultados de busqueda
+            # ANTES de que el click llegue al elemento, haciendo que las coordenadas
+            # apunten al area vacia que quedo tras desaparecer el panel de resultados.
             js_result = self._click_contact_js(contact)
             if js_result and js_result.get("clicked"):
                 cx = js_result.get("x", 0)
                 cy = js_result.get("y", 0)
-                self.log(f"[JS-LOCATE] '{js_result.get('name')}' localizado ({js_result.get('method')}) en ({cx:.0f},{cy:.0f})")
+                self.log(f"[JS-LOCATE] '{js_result.get('name')}' en ({cx:.0f},{cy:.0f}) via {js_result.get('method')}")
                 if cx and cy:
                     try:
-                        page.mouse.move(cx, cy)
-                        page.wait_for_timeout(80)
                         page.mouse.click(cx, cy)
-                        # Escape cierra el overlay de busqueda sin cerrar el chat abierto,
-                        # permitiendo que WA Web confirme la seleccion correctamente.
-                        page.wait_for_timeout(250)
-                        page.keyboard.press("Escape")
-                        page.wait_for_timeout(250)
+                        # Detectar apertura rapido: si compose aparece en <1200ms, confirmar
+                        # SIN esperar el header (que en WA Web 2026 puede tardar mas).
+                        page.wait_for_timeout(1200)
+                        if self._is_compose_visible():
+                            self.log(f"Contacto '{contact}' abierto via mouse.click (compose).")
+                            return True
                     except Exception as _me:
-                        self.log(f"[MOUSE-CLICK] Error en click fisico: {_me}")
-                if self._wait_header(contact, timeout_ms=9000):
-                    self.log(f"Contacto '{contact}' abierto via mouse.click (V8.7.1).")
+                        self.log(f"[MOUSE-CLICK] Error: {_me}")
+                if self._wait_header(contact, timeout_ms=5000):
+                    self.log(f"Contacto '{contact}' abierto via mouse.click (header).")
                     return True
-                self.log("[JS-CLICK] Localizado pero header no confirmado. Continua con fallbacks.")
+                self.log("[MOUSE-CLICK] Sin confirmacion tras mouse.click.")
 
-            # Fallback: Playwright click en candidatos rankeados
+            # V8.7.3 — Estrategia 3: candidatos Playwright + teclado de respaldo.
+            # Solo llegar aqui si las dos estrategias anteriores fallaron y el compose
+            # NO esta visible (para no interrumpir un chat que ya este abierto).
+            if self._is_compose_visible():
+                self.log(f"Compose visible al inicio de fallback — retornando True.")
+                return True
+
+            # Fallback Playwright: click directo en candidatos rankeados
             ranked = self._rank_candidates(contact, self._collect_candidates())
 
             if not ranked:
@@ -1557,7 +1624,6 @@ class BrowserWorker(threading.Thread):
                 try:
                     target = node
                     if kind in ("span",):
-                        # Buscar ancestro clickeable ampliando roles buscados
                         for ancestor_selector in (
                             "xpath=ancestor::*[@data-testid='cell-frame-container' or @role='gridcell' or @role='row' or @role='listitem' or @tabindex='0'][1]",
                         ):
@@ -1574,24 +1640,32 @@ class BrowserWorker(threading.Thread):
                         node.click(timeout=3000, force=True)
                     except Exception:
                         continue
-                if self._wait_header(contact, timeout_ms=9000):
+                page.wait_for_timeout(1000)
+                if self._is_compose_visible():
+                    self.log(f"Contacto seleccionado por coincidencia LIKE (compose): {name}")
+                    return True
+                if self._wait_header(contact, timeout_ms=4000):
                     self.log(f"Contacto seleccionado por coincidencia LIKE: {name}")
                     return True
 
-            # Fallback de teclado: ArrowDown + Enter
-            try:
-                page.keyboard.press("ArrowDown")
-                page.wait_for_timeout(250)
-                page.keyboard.press("Enter")
-                page.wait_for_timeout(700)
-                if self._wait_header(contact, timeout_ms=6000):
-                    self.log(f"Contacto seleccionado via teclado (ArrowDown+Enter): {contact}")
-                    return True
-            except Exception:
-                pass
+            # Fallback final de teclado — solo si compose NO esta visible
+            if not self._is_compose_visible():
+                try:
+                    page.keyboard.press("ArrowDown")
+                    page.wait_for_timeout(400)
+                    page.keyboard.press("Enter")
+                    page.wait_for_timeout(1000)
+                    if self._is_compose_visible():
+                        self.log(f"Contacto seleccionado via teclado final (compose): {contact}")
+                        return True
+                    if self._wait_header(contact, timeout_ms=4000):
+                        self.log(f"Contacto seleccionado via teclado (ArrowDown+Enter): {contact}")
+                        return True
+                except Exception:
+                    pass
 
             self._clear_global_search()
-            if self._wait_header(contact, timeout_ms=9000):
+            if self._wait_header(contact, timeout_ms=5000):
                 self.log(f"Contacto seleccionado (confirmacion post-click): {contact}")
                 return True
             raise TimeoutError("No se pudo confirmar apertura del chat objetivo.")

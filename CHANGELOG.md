@@ -1,5 +1,19 @@
 # Changelog
 
+## [v8.7.3] — 2026-06-06
+### Fixed
+- Bug crítico: `_select_contact` revertía el chat al estado de búsqueda tras abrirlo. Causa raíz identificada en tres regresiones: (1) `blur()` en el search input antes del `page.mouse.click()` ocultaba el panel de resultados antes de que el click llegara al elemento, causando que las coordenadas apuntaran a área vacía; (2) falta de detección rápida de éxito — `_wait_header` esperaba hasta 9000ms sin verificar `_is_compose_visible()`, y durante esa espera las estrategias de fallback (ArrowDown+Enter) interrumpían el chat ya abierto; (3) ArrowDown sin guard de compose — si el chat estaba abierto pero el header no se detectaba, el ArrowDown lo navegaba a otro chat.
+- Reescritura completa de la secuencia de estrategias en `_select_contact`:
+  1. **Teclado primario**: ArrowDown → Enter → wait 1200ms → `_is_compose_visible()` → `return True` inmediato. No depende de coordenadas DOM ni selectores que cambien con WA Web.
+  2. **Mouse sin blur**: JS-locate → `page.mouse.click(cx, cy)` (sin `blur()` previo) → wait 1200ms → `_is_compose_visible()` → `return True` inmediato.
+  3. **Guard compose**: antes del loop Playwright, si `_is_compose_visible()` → `return True` sin ejecutar ninguna estrategia adicional.
+  4. **Playwright fallback**: timeout reducido de 9000ms → 4000ms + check compose post-click.
+  5. **ArrowDown final**: solo si `not _is_compose_visible()` para no interrumpir chat abierto.
+### Added
+- Skill `/debug-wa-click`: diagnóstico estructurado del flujo completo de selección de contacto en WA Web — identifica regresiones en blur/Escape/ArrowDown-guard, verifica selectores del panel lateral y composer, reporta con recomendaciones concretas.
+### Docs
+- SDD (`.claude/specs/project-spec.md`) actualizado a V8.7.3 con detalle de todas las versiones 8.7.x y los cambios de estrategia.
+
 ## [v8.7.1] — 2026-06-06
 ### Fixed
 - Bug crítico: `_click_contact_js` hacía click en spans de subtítulo de grupos ("Albert Osorio is also in this group") antes que en el contacto directo. Nuevo filtro `isSecondarySpan()` detecta ancestros con data-testid/class indicando posición secundaria y los descarta; solo si no hay span primario se intenta con secundarios.
