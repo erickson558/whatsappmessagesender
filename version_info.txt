@@ -1,0 +1,32 @@
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=(8, 7, 4, 0),
+    prodvers=(8, 7, 4, 0),
+    mask=0x3F,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo(
+      [
+        StringTable(
+          '040904B0',
+          [
+            StringStruct('CompanyName', 'whatsappmessagesender'),
+            StringStruct('FileDescription', 'Programador de Mensajes WhatsApp'),
+            StringStruct('FileVersion', '8.7.4'),
+            StringStruct('InternalName', 'enviar_whatsapp'),
+            StringStruct('LegalCopyright', 'Apache License 2.0'),
+            StringStruct('OriginalFilename', 'enviar_whatsapp.exe'),
+            StringStruct('ProductName', 'Programador de Mensajes WhatsApp'),
+            StringStruct('ProductVersion', '8.7.4')
+          ]
+        )
+      ]
+    ),
+    VarFileInfo([VarStruct('Translation', [1033, 1200])])
+  ]
+)
