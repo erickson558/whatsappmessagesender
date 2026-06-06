@@ -209,8 +209,10 @@ class WhatsAppSchedulerApp:
         splash.after(350, splash.destroy)
         self.root.after(420, self.root.deiconify)
 
-        # Conectar WhatsApp Web en paralelo (no bloquea la GUI)
-        threading.Thread(target=self.backend.bind_whatsapp_tab, daemon=True).start()
+        # Conectar WhatsApp Web en paralelo (no bloquea la GUI).
+        # after(450) asegura que la ventana ya esta visible antes de iniciar la conexion,
+        # evitando que bind_whatsapp_tab compita con el renderizado inicial de la ventana.
+        self.root.after(450, lambda: threading.Thread(target=self.backend.bind_whatsapp_tab, daemon=True).start())
 
     # =========================================================================
     # SPLASH SCREEN
@@ -270,7 +272,6 @@ class WhatsAppSchedulerApp:
                 splash.update_idletasks()
             except Exception:
                 break
-            time.sleep(0.008)
 
     # =========================================================================
 
@@ -626,8 +627,7 @@ class WhatsAppSchedulerApp:
 
     def _show_about(self) -> None:
         """Muestra un diálogo modal con información de la aplicación (nombre, versión, autor, copyright)."""
-        import datetime
-        year = datetime.date.today().year
+        year = datetime.now().year
 
         # Crear ventana modal centrada sobre la ventana principal
         about_win = tk.Toplevel(self.root)

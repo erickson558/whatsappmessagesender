@@ -10,6 +10,7 @@ from __future__ import annotations
 import copy
 import json
 import os
+import shutil
 from typing import Any, Dict, List
 
 
@@ -132,7 +133,6 @@ class ConfigStore:
             # Configuracion ilegible: crear backup y regenerar con valores por defecto
             backup_path = self.path + ".bak"
             try:
-                import shutil
                 shutil.copy2(self.path, backup_path)
             except Exception:
                 pass

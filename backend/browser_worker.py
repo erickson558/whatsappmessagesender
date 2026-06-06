@@ -176,7 +176,6 @@ class BrowserWorker(threading.Thread):
         self.browser_process = None
         self.browser_exec: Optional[str] = None
         self._baseline_pids: set[int] = set()
-        self._we_started = False
         self._opened_pages = []
 
         # --- Configuracion del navegador y conexion CDP ---
@@ -308,19 +307,15 @@ class BrowserWorker(threading.Thread):
 
         while not self._stop_event.is_set():
             try:
-                # Esperar un comando en la cola con timeout de 0.2s
                 cmd, kwargs, done, out = self.req_q.get(timeout=0.2)
             except queue.Empty:
-                # Cola vacia: ejecutar keepalive (y deteccion de hibernacion)
                 self._maybe_keepalive()
                 continue
             try:
-                # Ejecutar el comando con recuperacion automatica ante desconexiones
                 out["result"] = self._exec_with_recovery(cmd, kwargs)
             except Exception as error:
                 out["error"] = str(error)
             finally:
-                # Notificar al llamante que el comando termino (exitoso o con error)
                 done.set()
         self._shutdown()
 
@@ -362,9 +357,7 @@ class BrowserWorker(threading.Thread):
             return
         self._last_keepalive_at = now
 
-        # Si no hay browser ni pagina activa, no hay nada que verificar
-        if self.browser is None and self.page is None:
-            return
+        # Si no hay pagina activa, no hay nada que verificar
         if self.page is None:
             return
 
@@ -406,22 +399,17 @@ class BrowserWorker(threading.Thread):
     def _exec_cmd(self, cmd: str, kwargs: Dict[str, object]):
         """Despacha el comando recibido en la cola al metodo correspondiente."""
         if cmd == "ensure":
-            # Inicializar/verificar conexion con el browser y WhatsApp Web
             return self._ensure_browser()
         if cmd == "bind_whatsapp_tab":
-            # Conectar o encontrar la pestana de WhatsApp Web
             return self._bind_whatsapp_tab()
         if cmd == "open_new_chat":
-            # Abrir el dialogo de nuevo chat en WhatsApp Web
             return self._open_new_chat()
         if cmd == "select_contact":
-            # Buscar y seleccionar un contacto por nombre
             return self._select_contact(str(kwargs["contact"]))
         if cmd == "send_message":
-            # Escribir y enviar el mensaje al contacto activo
             return self._send_message(str(kwargs["text"]), str(kwargs["contact"]))
         if cmd == "post_sleep_recover":
-            # Recuperacion forzada tras hibernacion del sistema (timeout extendido)
+            # Timeout extendido para dar tiempo al browser de restaurarse tras hibernacion
             self._quick_cdp_check_timeout = 12
             try:
                 self._post_sleep_recover()
@@ -429,7 +417,6 @@ class BrowserWorker(threading.Thread):
                 self._quick_cdp_check_timeout = 2
             return True
         if cmd == "shutdown":
-            # Detener el worker y cerrar el browser si lo lanzamos nosotros
             self._stop_event.set()
             self._shutdown(force=True)
             return True
@@ -452,9 +439,9 @@ class BrowserWorker(threading.Thread):
             raise
 
     def _is_context_alive(self) -> bool:
-        """True si el contexto CDP tiene al menos una pagina (proxy de conexion viva)."""
+        """True si el contexto CDP responde al acceder a sus paginas (proxy de conexion viva)."""
         try:
-            return self.context is not None and len(self.context.pages) >= 0
+            return self.context is not None and self.context.pages is not None
         except Exception:
             return False
 
@@ -516,10 +503,9 @@ class BrowserWorker(threading.Thread):
             self.status(f"La ruta configurada no existe para {self.browser_choice}: {exec_path}")
             return False
 
-        # --- NUEVO: Verificar si el browser ya esta corriendo (post-hibernacion) ---
-        # Si detectamos PIDs activos del browser, esperamos que su puerto CDP
-        # se restaure antes de lanzar una instancia nueva (que usaria otro puerto
-        # o perfil, perdiendo la sesion de WhatsApp).
+        # Si hay PIDs activos del browser, esperamos que su puerto CDP se restaure
+        # antes de lanzar una instancia nueva (que usaria otro puerto o perfil,
+        # perdiendo la sesion de WhatsApp). Tipico escenario post-hibernacion.
         existing_pids = _existing_pids(exec_path)
         if existing_pids:
             self.log(
@@ -554,7 +540,6 @@ class BrowserWorker(threading.Thread):
         self.log(f"Perfil de navegador: {profile_dir}")
         try:
             self.browser_process = subprocess.Popen(launch_args, shell=False)
-            self._we_started = True
         except Exception as error:
             self.log(f"Fallo al iniciar {self.browser_choice}: {error}")
             return False
@@ -1257,6 +1242,12 @@ class BrowserWorker(threading.Thread):
                     return
             except Exception:
                 pass
+            try:
+                # WA Web 2026: lista de contactos sin role especifico
+                if page.locator("span[title]:visible").first.is_visible(timeout=400):
+                    return
+            except Exception:
+                pass
 
     def _collect_candidates(self):
         """Recolecta elementos DOM candidatos a ser el contacto buscado, en orden de prioridad de fuente.
@@ -1382,16 +1373,19 @@ class BrowserWorker(threading.Thread):
         ranked.sort(key=lambda item: (-item[0], item[4]))
         return ranked
 
-    def _click_contact_js(self, contact: str) -> bool:
+    def _click_contact_js(self, contact: str) -> "dict | None":
         """Usa JavaScript para encontrar y clickear el contacto correcto en el panel lateral.
 
         Busca span[title] que coincida con el contacto dentro del panel izquierdo (#pane-side),
-        luego sube el árbol DOM hasta encontrar el contenedor clickeable real (no el span).
+        luego sube el arbol DOM hasta encontrar el contenedor clickeable real (no el span).
         Esto es resistente a cambios de data-testid en WA Web.
+
+        Retorna dict con {clicked, name, method, x, y} si el click se ejecuto, o None en caso de error.
+        Las coordenadas (x, y) son el centro del elemento clickeado en coordenadas de viewport.
         """
         page = self.page
         if page is None:
-            return False
+            return None
         # POR QUE: usar JS en lugar de Playwright.click() — los data-testid cambian con cada version de WA Web;
         # el DOM-walking por role/tabindex es mas estable.
         try:
@@ -1404,13 +1398,15 @@ class BrowserWorker(threading.Thread):
                     const pane = document.querySelector('#pane-side')
                         || document.querySelector('[data-testid="pane-side"]')
                         || document.querySelector('[aria-label="Chat list"]')
+                        || document.querySelector('[aria-label="Chats"]')
+                        || document.querySelector('[data-testid="chat-list"]')
                         || document.body;
 
                     const spans = Array.from(pane.querySelectorAll('span[title]'));
                     for (const span of spans) {
                         if (!matches(span.title)) continue;
 
-                        // Subir el árbol DOM buscando el contenedor clickeable real
+                        // Subir el arbol DOM buscando el contenedor clickeable real
                         let el = span;
                         for (let i = 0; i < 12; i++) {
                             el = el.parentElement;
@@ -1427,9 +1423,12 @@ class BrowserWorker(threading.Thread):
                                 (testid && testid.includes('list-item')) ||
                                 tabidx === '0'
                             ) {
+                                const rect = el.getBoundingClientRect();
+                                const cx = rect.left + rect.width / 2;
+                                const cy = rect.top + rect.height / 2;
                                 el.click();
                                 el.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true, view: window}));
-                                return {clicked: true, name: span.title, method: tag + (role || testid || '')};
+                                return {clicked: true, name: span.title, method: tag + (role || testid || ''), x: cx, y: cy};
                             }
                         }
                         // Fallback: subir exactamente 5 niveles desde el span
@@ -1439,9 +1438,12 @@ class BrowserWorker(threading.Thread):
                             parent = parent.parentElement;
                         }
                         if (parent !== span) {
+                            const rect2 = parent.getBoundingClientRect();
+                            const cx2 = rect2.left + rect2.width / 2;
+                            const cy2 = rect2.top + rect2.height / 2;
                             parent.click();
                             parent.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true, view: window}));
-                            return {clicked: true, name: span.title, method: 'depth-5-fallback'};
+                            return {clicked: true, name: span.title, method: 'depth-5-fallback', x: cx2, y: cy2};
                         }
                     }
                     return {clicked: false, reason: 'no matching span found in pane-side'};
@@ -1449,12 +1451,12 @@ class BrowserWorker(threading.Thread):
             """, contact)
             if result and result.get("clicked"):
                 self.log(f"[JS-CLICK] '{result.get('name')}' clickeado via JS ({result.get('method')})")
-                return True
+                return result
             if result:
                 self.log(f"[JS-CLICK] Sin resultado: {result.get('reason', 'unknown')}")
         except Exception as error:
             self.log(f"[JS-CLICK] Error: {error}")
-        return False
+        return None
 
     def _wait_header(self, contact: str, timeout_ms: int = 9000) -> bool:
         """Espera hasta que el header de WA Web confirme que el chat del contacto esta abierto."""
@@ -1488,12 +1490,24 @@ class BrowserWorker(threading.Thread):
 
             self._type_search_variants(contact)
 
-            # FIX V8.6.1: estrategia primaria — JS click con DOM walking.
-            # Más robusto que Playwright click porque no depende de data-testid específicos.
-            if self._click_contact_js(contact):
+            # FIX V8.6.1/V8.7.0: estrategia primaria — JS click con DOM walking + mouse.click real.
+            # JS click encuentra y toca el elemento; page.mouse.click dispara la cadena completa
+            # de eventos de puntero que WA Web 2026 requiere para mantener el chat abierto.
+            js_result = self._click_contact_js(contact)
+            if js_result and js_result.get("clicked"):
+                cx = js_result.get("x", 0)
+                cy = js_result.get("y", 0)
+                if cx and cy:
+                    try:
+                        # Simular click real con coordenadas de pantalla (dispara pointerdown/up/mouseover)
+                        page.mouse.move(cx, cy)
+                        page.wait_for_timeout(80)
+                        page.mouse.click(cx, cy)
+                    except Exception as _me:
+                        self.log(f"[MOUSE-CLICK] Error en click fisico: {_me}")
                 page.wait_for_timeout(700)
                 if self._wait_header(contact, timeout_ms=9000):
-                    self.log(f"Contacto '{contact}' abierto via JS-click (estrategia primaria).")
+                    self.log(f"Contacto '{contact}' abierto via JS+mouse.click (V8.7.0).")
                     return True
                 self.log("[JS-CLICK] Click ejecutado pero header no confirmado. Continua con fallbacks.")
 
@@ -1705,8 +1719,7 @@ class BrowserWorker(threading.Thread):
         """
         page = self.page
         end = time.time() + timeout_ms / 1000.0
-        normalize = lambda value: re.sub(r"\s+", " ", re.sub(r"\r\n|\r", "\n", value)).strip()
-        text = normalize(text)
+        text = self._normalized_text(text)
         while time.time() < end:
             for selector in (
                 "div.message-out span.selectable-text",
@@ -1721,7 +1734,7 @@ class BrowserWorker(threading.Thread):
                     try:
                         if not node.is_visible():
                             continue
-                        candidate = normalize(node.inner_text())
+                        candidate = self._normalized_text(node.inner_text())
                         if candidate == text:
                             return True
                         if len(text) >= 6 and (text in candidate or candidate in text):
@@ -1932,7 +1945,6 @@ class BrowserWorker(threading.Thread):
             pass
         finally:
             self.browser_process = None
-            self._we_started = False
             self._launched_pids.clear()
 
     def _shutdown(self, force: bool = False) -> None:

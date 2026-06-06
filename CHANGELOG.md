@@ -1,5 +1,23 @@
 # Changelog
 
+## [v8.7.0] — 2026-06-06
+### Fixed
+- Bug crítico: click JS abría el chat pero WA Web 2026 lo revertía inmediatamente al estado de búsqueda. Solución: `_click_contact_js` ahora devuelve las coordenadas del elemento (getBoundingClientRect), y `_select_contact` hace `page.mouse.move + page.mouse.click` con esas coordenadas para disparar la cadena completa de eventos de puntero (pointerdown, pointerup, mouseover) que WA Web requiere para mantener el chat abierto — exactamente lo que hace el mouse físico.
+- `_is_context_alive`: `len(self.context.pages) >= 0` era siempre True independiente del estado CDP; corregido a `self.context.pages is not None` que realmente detecta conexión muerta.
+- Guardia doble redundante en `_maybe_keepalive` eliminada.
+- Variable muerta `self._we_started` eliminada (asignada en 3 lugares, nunca leída en condiciones).
+- Import local `shutil` movido a nivel de módulo en `config_store.py`.
+- Import local `datetime` redundante eliminado en `gui.py` (`_show_about`).
+### Added
+- Soporte WA Web 2026: selectores `[aria-label="Chats"]` y `[data-testid="chat-list"]` en `_click_contact_js` para localizar el panel lateral.
+- Detección de resultados WA Web 2026 en `_type_search_variants`: `span[title]:visible` como cuarto check.
+### Performance
+- Startup ~0.8s más rápido: eliminado `time.sleep(0.008)` del loop de animación del splash (100 pasos × 8ms = animación puramente artificial).
+- `bind_whatsapp_tab` diferido a `root.after(450)` para no competir con el renderizado inicial de la ventana principal.
+### Refactor
+- `_verify_message_sent`: lambda de normalización interna reemplazada por `_normalized_text` (ya existía como staticmethod).
+- Comentarios redundantes eliminados en `_exec_cmd`, `run()` y `_launch_browser_proc`.
+
 ## [v8.6.2] — 2026-06-06
 ### Added
 - Nuevos skills: `/annotate-code` (documenta módulos Python) y `/verify-selectors` (verifica selectores WA Web)
