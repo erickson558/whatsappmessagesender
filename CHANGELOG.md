@@ -1,5 +1,10 @@
 # Changelog
 
+## [v8.7.5] — 2026-06-06
+### Docs
+- Agente `python-desktop-engineer`, skills `diagnose-bot` y `verify-selectors`, SDD `project-spec.md` actualizados con patrones de confiabilidad V8.7.4 (guard compose en `_clear_global_search`, `_ensure_chat_target` con `_is_compose_visible`, seleccion teclado-first, skill `/debug-wa-click`).
+- Versión bumpeada a V8.7.5 para resolver conflicto de tag duplicado en GitHub Actions (el commit de docs anterior usaba el mismo tag v8.7.4 ya existente).
+
 ## [v8.7.4] — 2026-06-06
 ### Fixed
 - Bug crítico: `_send_message` cerraba el chat tras abrir el compose box. Causa: `_clear_global_search()` se llamaba dentro de `_send_message` ANTES de escribir el mensaje; su `page.keyboard.press("Escape")` interno cerraba el chat en WA Web 2026, y el click en el search box volvía al modo búsqueda. Solución: removida la llamada a `_clear_global_search()` del flujo pre-escritura; se mueve a después del envío exitoso para limpiar el search box sin interrumpir el chat.
