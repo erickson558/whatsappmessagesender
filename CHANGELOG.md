@@ -1,5 +1,11 @@
 # Changelog
 
+## [v8.7.1] — 2026-06-06
+### Fixed
+- Bug crítico: `_click_contact_js` hacía click en spans de subtítulo de grupos ("Albert Osorio is also in this group") antes que en el contacto directo. Nuevo filtro `isSecondarySpan()` detecta ancestros con data-testid/class indicando posición secundaria y los descarta; solo si no hay span primario se intenta con secundarios.
+- Bug crítico: el click JS (`.click()` + `dispatchEvent`) desplazaba el elemento durante la animación de WA Web ANTES de que `page.mouse.click()` ejecutara, causando que el mouse cayera en coordenadas incorrectas (área vacía). Eliminados los clicks sintéticos del JS — ahora `_click_contact_js` **solo localiza y devuelve coordenadas**, y `_select_contact` hace un único `page.mouse.click()` limpio.
+- Agregado `page.keyboard.press("Escape")` post-click para cerrar el overlay de búsqueda sin cerrar el chat, permitiendo que WA Web confirme la selección.
+
 ## [v8.7.0] — 2026-06-06
 ### Fixed
 - Bug crítico: click JS abría el chat pero WA Web 2026 lo revertía inmediatamente al estado de búsqueda. Solución: `_click_contact_js` ahora devuelve las coordenadas del elemento (getBoundingClientRect), y `_select_contact` hace `page.mouse.move + page.mouse.click` con esas coordenadas para disparar la cadena completa de eventos de puntero (pointerdown, pointerup, mouseover) que WA Web requiere para mantener el chat abierto — exactamente lo que hace el mouse físico.

@@ -1374,14 +1374,17 @@ class BrowserWorker(threading.Thread):
         return ranked
 
     def _click_contact_js(self, contact: str) -> "dict | None":
-        """Usa JavaScript para encontrar y clickear el contacto correcto en el panel lateral.
+        """Localiza el contacto en el panel lateral y devuelve las coordenadas para click real.
 
         Busca span[title] que coincida con el contacto dentro del panel izquierdo (#pane-side),
-        luego sube el arbol DOM hasta encontrar el contenedor clickeable real (no el span).
-        Esto es resistente a cambios de data-testid en WA Web.
+        filtrando spans en posicion secundaria (subtitulos de grupo como "X is also in this group"),
+        luego sube el arbol DOM hasta encontrar el contenedor clickeable real.
 
-        Retorna dict con {clicked, name, method, x, y} si el click se ejecuto, o None en caso de error.
-        Las coordenadas (x, y) son el centro del elemento clickeado en coordenadas de viewport.
+        NO hace click en JS — solo retorna coordenadas para que page.mouse.click() en Python
+        dispare la cadena completa de eventos de puntero. Un click JS adicional antes desplaza
+        el elemento durante la animacion de WA Web, causando que page.mouse.click() quede fuera.
+
+        Retorna dict con {clicked, name, method, x, y} si encontro el elemento, o None en error.
         """
         page = self.page
         if page is None:
@@ -1394,6 +1397,26 @@ class BrowserWorker(threading.Thread):
                     const tokens = contact.toLowerCase().split(/\\s+/).filter(Boolean);
                     const matches = (text) => text && tokens.length > 0 && tokens.every(t => text.toLowerCase().includes(t));
 
+                    // Detectar si un span esta en posicion secundaria (subtitulo de grupo,
+                    // mensaje previo o indicador de membresia) en lugar de ser el nombre principal.
+                    // En WA Web, los subtitulos "X is also in this group" tienen ancestros con
+                    // data-testid que incluyen "secondary", "msg", "last-" o "subtitle".
+                    function isSecondarySpan(span) {
+                        let el = span.parentElement;
+                        for (let i = 0; i < 8; i++) {
+                            if (!el || el === document.body) break;
+                            const testid = (el.getAttribute('data-testid') || '').toLowerCase();
+                            const cls = (el.getAttribute('class') || '').toLowerCase();
+                            if (testid.includes('secondary') || testid.includes('subtitle') ||
+                                testid.includes('msg') || testid.includes('last-') ||
+                                cls.includes('secondary') || cls.includes('subtitle')) {
+                                return true;
+                            }
+                            el = el.parentElement;
+                        }
+                        return false;
+                    }
+
                     // Buscar SOLO en el panel lateral izquierdo (no en el chat abierto)
                     const pane = document.querySelector('#pane-side')
                         || document.querySelector('[data-testid="pane-side"]')
@@ -1402,11 +1425,16 @@ class BrowserWorker(threading.Thread):
                         || document.querySelector('[data-testid="chat-list"]')
                         || document.body;
 
-                    const spans = Array.from(pane.querySelectorAll('span[title]'));
-                    for (const span of spans) {
-                        if (!matches(span.title)) continue;
+                    const allSpans = Array.from(pane.querySelectorAll('span[title]')).filter(s => matches(s.title));
 
-                        // Subir el arbol DOM buscando el contenedor clickeable real
+                    // Priorizar spans de nombre principal (no subtitulos de grupos)
+                    const primarySpans = allSpans.filter(s => !isSecondarySpan(s));
+                    const spansToTry = primarySpans.length > 0 ? primarySpans : allSpans;
+
+                    for (const span of spansToTry) {
+                        // Subir el arbol DOM buscando el contenedor clickeable real.
+                        // Solo retornar coordenadas — el click real lo hace page.mouse.click en Python
+                        // para evitar que el JS-click desplace el elemento antes de que el mouse llegue.
                         let el = span;
                         for (let i = 0; i < 12; i++) {
                             el = el.parentElement;
@@ -1424,11 +1452,10 @@ class BrowserWorker(threading.Thread):
                                 tabidx === '0'
                             ) {
                                 const rect = el.getBoundingClientRect();
-                                const cx = rect.left + rect.width / 2;
-                                const cy = rect.top + rect.height / 2;
-                                el.click();
-                                el.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true, view: window}));
-                                return {clicked: true, name: span.title, method: tag + (role || testid || ''), x: cx, y: cy};
+                                return {clicked: true, name: span.title,
+                                        method: tag + (role || testid || ''),
+                                        x: rect.left + rect.width / 2,
+                                        y: rect.top + rect.height / 2};
                             }
                         }
                         // Fallback: subir exactamente 5 niveles desde el span
@@ -1439,11 +1466,9 @@ class BrowserWorker(threading.Thread):
                         }
                         if (parent !== span) {
                             const rect2 = parent.getBoundingClientRect();
-                            const cx2 = rect2.left + rect2.width / 2;
-                            const cy2 = rect2.top + rect2.height / 2;
-                            parent.click();
-                            parent.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true, view: window}));
-                            return {clicked: true, name: span.title, method: 'depth-5-fallback', x: cx2, y: cy2};
+                            return {clicked: true, name: span.title, method: 'depth-5-fallback',
+                                    x: rect2.left + rect2.width / 2,
+                                    y: rect2.top + rect2.height / 2};
                         }
                     }
                     return {clicked: false, reason: 'no matching span found in pane-side'};
@@ -1490,26 +1515,31 @@ class BrowserWorker(threading.Thread):
 
             self._type_search_variants(contact)
 
-            # FIX V8.6.1/V8.7.0: estrategia primaria — JS click con DOM walking + mouse.click real.
-            # JS click encuentra y toca el elemento; page.mouse.click dispara la cadena completa
-            # de eventos de puntero que WA Web 2026 requiere para mantener el chat abierto.
+            # V8.7.1: JS localiza el elemento y devuelve coordenadas SIN hacer click.
+            # Un solo page.mouse.click() dispara la cadena completa de eventos de puntero.
+            # El click JS previo desplazaba el elemento durante la animacion de WA Web,
+            # haciendo que el mouse.click quedara en coordenadas incorrectas.
             js_result = self._click_contact_js(contact)
             if js_result and js_result.get("clicked"):
                 cx = js_result.get("x", 0)
                 cy = js_result.get("y", 0)
+                self.log(f"[JS-LOCATE] '{js_result.get('name')}' localizado ({js_result.get('method')}) en ({cx:.0f},{cy:.0f})")
                 if cx and cy:
                     try:
-                        # Simular click real con coordenadas de pantalla (dispara pointerdown/up/mouseover)
                         page.mouse.move(cx, cy)
                         page.wait_for_timeout(80)
                         page.mouse.click(cx, cy)
+                        # Escape cierra el overlay de busqueda sin cerrar el chat abierto,
+                        # permitiendo que WA Web confirme la seleccion correctamente.
+                        page.wait_for_timeout(250)
+                        page.keyboard.press("Escape")
+                        page.wait_for_timeout(250)
                     except Exception as _me:
                         self.log(f"[MOUSE-CLICK] Error en click fisico: {_me}")
-                page.wait_for_timeout(700)
                 if self._wait_header(contact, timeout_ms=9000):
-                    self.log(f"Contacto '{contact}' abierto via JS+mouse.click (V8.7.0).")
+                    self.log(f"Contacto '{contact}' abierto via mouse.click (V8.7.1).")
                     return True
-                self.log("[JS-CLICK] Click ejecutado pero header no confirmado. Continua con fallbacks.")
+                self.log("[JS-CLICK] Localizado pero header no confirmado. Continua con fallbacks.")
 
             # Fallback: Playwright click en candidatos rankeados
             ranked = self._rank_candidates(contact, self._collect_candidates())
