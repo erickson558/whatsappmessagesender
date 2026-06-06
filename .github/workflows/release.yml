@@ -41,9 +41,8 @@ jobs:
       - name: Ensure tag does not exist yet
         shell: pwsh
         run: |
-          git fetch --tags --force
           $tag = "v${{ steps.version.outputs.value }}"
-          git tag --list $tag | Tee-Object -Variable existing | Out-Null
+          $existing = git ls-remote --tags origin "refs/tags/$tag"
           if ($existing) {
             throw "La version $tag ya existe. Debes incrementar VERSION antes de hacer push a main."
           }
