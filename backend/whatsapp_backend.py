@@ -1,3 +1,10 @@
+"""
+Fachada de alto nivel entre la GUI y el BrowserWorker.
+
+Traduce las operaciones de la GUI (seleccionar contacto, enviar mensaje) en
+comandos thread-safe hacia el worker. Gestiona timeouts, el lock de entrega
+y el log de mensajes enviados.
+"""
 from __future__ import annotations
 
 import threading
@@ -28,6 +35,7 @@ class WhatsAppBackend:
         status_fn: Callable[[str], None],
         sent_log_fn: Callable[[str, str], None],
     ) -> None:
+        """Crea e inicia el BrowserWorker. La GUI pasa callbacks para log, status y registro de envíos."""
         self._sent_log_fn = sent_log_fn      # Funcion para registrar mensajes enviados en log
         self._selected_contact = ""           # Contacto actualmente seleccionado (solo lectura externa)
         # Serializa el par select_contact+send_message para evitar race condition

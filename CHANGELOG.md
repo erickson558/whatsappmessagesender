@@ -1,5 +1,14 @@
 # Changelog
 
+## [v8.6.2] — 2026-06-06
+### Added
+- Nuevos skills: `/annotate-code` (documenta módulos Python) y `/verify-selectors` (verifica selectores WA Web)
+### Docs
+- `browser_worker.py`: docstrings en 7 funciones de módulo, dataclass BrowserRuntimeSettings y 30 métodos del worker
+- `config_store.py`: docstring de módulo, docstrings en todas las funciones y métodos públicos
+- `logging_service.py`: docstring de módulo, docstrings en todos los métodos de la clase
+- `whatsapp_backend.py`: docstring de módulo e `__init__`
+
 ## [v8.6.1] — 2026-06-06
 ### Fixed
 - Bug raíz selección de contacto: click en `span` no abría el chat porque el XPath de ancestro fallaba en WA Web 2025

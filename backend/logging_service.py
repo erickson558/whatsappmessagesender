@@ -1,3 +1,11 @@
+"""
+Servicio de logging de la aplicación con rotación automática de archivos.
+
+Mantiene dos streams separados: log de aplicación (eventos internos, errores,
+reconexiones) y log de mensajes enviados (registro para auditoría del usuario).
+Cada sesión genera un par de archivos con timestamp; al iniciar se eliminan los
+archivos más antiguos conservando solo los últimos 3 pares.
+"""
 from __future__ import annotations
 
 import glob
@@ -19,7 +27,13 @@ def rotate_logs(pattern: str, keep: int = 3) -> None:
 
 
 class LoggingService:
+    """Gestiona los archivos de log y la notificación en tiempo real a la UI.
+
+    Thread-safe: todos los accesos a los file handles están protegidos con Lock.
+    """
+
     def __init__(self, ui_callback: Callable[[str], None] | None = None) -> None:
+        """Crea los archivos de log con timestamp y rota los más antiguos."""
         # Fix V8.1.4: usar directorio absoluto del ejecutable (modo frozen) o CWD
         # (modo desarrollo). Evita que los logs queden en un directorio inesperado
         # cuando el .exe se lanza desde un path diferente al de la aplicacion.
@@ -42,6 +56,7 @@ class LoggingService:
         self._lock = threading.Lock()
 
     def set_ui_callback(self, callback: Callable[[str], None] | None) -> None:
+        """Reemplaza el callback de UI para mostrar logs en el widget de texto de la app."""
         self._ui_callback = callback
 
     @staticmethod
@@ -62,12 +77,14 @@ class LoggingService:
             cb(line)
 
     def log_message_sent(self, contact: str, message: str) -> None:
+        """Registra un mensaje enviado en el log de mensajes (stream separado del log de app)."""
         line = self._format_line(f"Mensaje enviado a {contact}: {message}")
         with self._lock:
             self._msg_file.write(f"{line}\n")
             self._msg_file.flush()
 
     def close(self) -> None:
+        """Cierra los file handles de forma segura (llamar al cerrar la aplicación)."""
         with self._lock:
             try:
                 self._app_file.close()

@@ -1,3 +1,10 @@
+"""
+Persistencia de configuración de la aplicación en config.json.
+
+Gestiona carga, merge de defaults, migración de esquema legado, normalización
+de listas de mensajes y escritura segura. Un config.json corrupto se archiva
+como .bak y se regenera desde cero con valores por defecto.
+"""
 from __future__ import annotations
 
 import copy
@@ -17,6 +24,7 @@ DEFAULT_BROWSER_PATHS = {
 
 
 def _default_message_block() -> Dict[str, Any]:
+    """Retorna la estructura vacía de un slot de mensaje programado."""
     return {
         "contact": "",
         "message": "",
@@ -31,6 +39,7 @@ def _default_message_block() -> Dict[str, Any]:
 
 
 def _ensure_len(items: List[Dict[str, Any]] | None, count: int) -> List[Dict[str, Any]]:
+    """Garantiza que la lista tenga exactamente 'count' elementos; rellena con bloques vacíos o trunca."""
     data = list(items or [])[:count]
     while len(data) < count:
         data.append(_default_message_block())
@@ -38,6 +47,11 @@ def _ensure_len(items: List[Dict[str, Any]] | None, count: int) -> List[Dict[str
 
 
 def _deep_merge(target: Dict[str, Any], defaults: Dict[str, Any]) -> Dict[str, Any]:
+    """Fusiona 'defaults' en 'target' sin sobreescribir claves ya existentes.
+
+    Permite que versiones nuevas de la app agreguen claves al esquema sin borrar
+    la configuración guardada del usuario. Recursivo para dicts anidados.
+    """
     for key, value in defaults.items():
         if isinstance(value, dict):
             node = target.setdefault(key, {})
@@ -51,6 +65,7 @@ def _deep_merge(target: Dict[str, Any], defaults: Dict[str, Any]) -> Dict[str, A
 
 
 def _build_default_config() -> Dict[str, Any]:
+    """Construye el diccionario de configuración completo con todos los valores por defecto."""
     return {
         "global": {
             "browser": "Opera",
@@ -83,12 +98,25 @@ def _build_default_config() -> Dict[str, Any]:
 
 
 class ConfigStore:
+    """Gestiona la persistencia de configuración en un archivo JSON.
+
+    Punto de acceso único para leer y escribir configuración de la aplicación.
+    Garantiza que el archivo siempre tenga estructura válida: si está corrupto,
+    crea un backup .bak y regenera desde cero.
+    """
+
     def __init__(self, path: str = "config.json") -> None:
+        """Carga la configuración existente o crea una nueva con valores por defecto."""
         self.path = path
         self._defaults = _build_default_config()
         self.data = self._load()
 
     def _load(self) -> Dict[str, Any]:
+        """Lee config.json, aplica merge de defaults y normaliza la estructura.
+
+        Flujo: no existe → crea con defaults | corrupto → backup + reset |
+        válido → merge de defaults + migración de legado + normalización de listas.
+        """
         # Si no existe el archivo de configuracion, se crea uno con los valores por defecto.
         if not os.path.exists(self.path):
             data = copy.deepcopy(self._defaults)
@@ -125,6 +153,9 @@ class ConfigStore:
 
     @staticmethod
     def _migrate_legacy_browser_paths(data: Dict[str, Any]) -> None:
+        """Convierte el esquema de rutas de browser legado (claves planas como 'opera_path')
+        al esquema anidado actual ('browser_paths.Opera'). Permite actualizaciones transparentes.
+        """
         global_config = data.setdefault("global", {})
         browser_paths = global_config.setdefault("browser_paths", copy.deepcopy(DEFAULT_BROWSER_PATHS))
         global_config.setdefault("keepalive_interval_sec", 60)
@@ -151,36 +182,49 @@ class ConfigStore:
             browser_paths.setdefault(browser_name, default_path)
 
     def _write(self, data: Dict[str, Any] | None = None) -> None:
+        """Serializa la configuración a config.json con indentación legible."""
         payload = data if data is not None else self.data
         with open(self.path, "w", encoding="utf-8") as file:
             json.dump(payload, file, indent=4, ensure_ascii=False)
 
     def save(self) -> None:
+        """Persiste el estado actual de self.data en disco."""
         self._write()
 
     def get_global(self, key: str, default: Any = None) -> Any:
+        """Lee un valor de la sección 'global' de la configuración."""
         return self.data.get("global", {}).get(key, default)
 
     def set_global(self, key: str, value: Any) -> None:
+        """Escribe un valor en la sección 'global' y guarda en disco inmediatamente."""
         self.data.setdefault("global", {})[key] = value
         self.save()
 
     def get_browser_choice(self) -> str:
+        """Retorna el browser seleccionado; cae en 'Opera' si el valor guardado no es válido."""
         choice = str(self.get_global("browser", "Opera"))
         return choice if choice in SUPPORTED_BROWSERS else "Opera"
 
     def set_browser_choice(self, choice: str) -> None:
+        """Persiste la selección de browser; lanza ValueError si no está en SUPPORTED_BROWSERS."""
         if choice not in SUPPORTED_BROWSERS:
             raise ValueError(f"Navegador no soportado: {choice}")
         self.set_global("browser", choice)
 
     def get_browser_paths(self) -> Dict[str, str]:
+        """Retorna el mapa {browser: ruta_ejecutable} de todos los browsers configurados."""
         return dict(self.get_global("browser_paths", {}))
 
     def get_browser_path(self, browser: str) -> str:
+        """Retorna la ruta del ejecutable para el browser indicado (vacío si no está configurado)."""
         return str(self.get_browser_paths().get(browser, "")).strip()
 
     def set_browser_path(self, browser: str, path: str) -> None:
+        """Actualiza la ruta del ejecutable para el browser indicado y guarda en disco.
+
+        También actualiza la clave legada (ej. 'opera_path') para compatibilidad
+        con versiones anteriores del config.json.
+        """
         if browser not in SUPPORTED_BROWSERS:
             raise ValueError(f"Navegador no soportado: {browser}")
         global_config = self.data.setdefault("global", {})
@@ -197,6 +241,7 @@ class ConfigStore:
         self.save()
 
     def reset_default_browser_paths(self) -> None:
+        """Restaura todas las rutas de browser a sus valores por defecto de instalación."""
         global_config = self.data.setdefault("global", {})
         global_config["browser_paths"] = copy.deepcopy(DEFAULT_BROWSER_PATHS)
         global_config["opera_path"] = DEFAULT_BROWSER_PATHS["Opera"]
@@ -206,10 +251,12 @@ class ConfigStore:
         self.save()
 
     def get_group_messages(self, group_id: int) -> List[Dict[str, Any]]:
+        """Retorna la lista de mensajes del grupo indicado (1–4)."""
         key = f"messages_group{group_id}"
         return list(self.data.get(key, []))
 
     def set_group_messages(self, group_id: int, messages: List[Dict[str, Any]]) -> None:
+        """Reemplaza la lista de mensajes del grupo indicado y persiste en disco."""
         key = f"messages_group{group_id}"
         self.data[key] = list(messages)
         self.save()

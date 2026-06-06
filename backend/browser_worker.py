@@ -17,6 +17,11 @@ from playwright._impl._errors import TargetClosedError
 
 
 def _subprocess_no_window_kwargs() -> Dict[str, object]:
+    """Devuelve kwargs para suprimir ventana de consola en subprocesos Windows.
+
+    En sistemas que no son Windows devuelve un dict vacio porque la flag
+    CREATE_NO_WINDOW y STARTUPINFO solo existen en el modulo subprocess de Win32.
+    """
     if os.name != "nt":
         return {}
     kwargs: Dict[str, object] = {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)}
@@ -31,6 +36,12 @@ def _subprocess_no_window_kwargs() -> Dict[str, object]:
 
 
 def _normalize_like(text: str) -> str:
+    """Normaliza texto para comparacion sin tildes, en minusculas y sin caracteres especiales.
+
+    Aplica descomposicion NFKD para separar diacriticos, luego los elimina,
+    convierte a minusculas y sustituye todo lo que no sea alfanumerico o
+    separador por espacio, colapsando multiples espacios.
+    """
     if not text:
         return ""
     normalized = unicodedata.normalize("NFKD", text)
@@ -42,11 +53,17 @@ def _normalize_like(text: str) -> str:
 
 
 def _tokens(text: str) -> list[str]:
+    """Tokeniza texto normalizado; cada token es una palabra sin espacios."""
     normalized = _normalize_like(text)
     return [token for token in normalized.split() if token]
 
 
 def _coverage_score(needle: str, candidate: str) -> float:
+    """Porcentaje de tokens de needle que aparecen en candidate (0.0-1.0).
+
+    Retorna 0.0 si alguna de las dos cadenas no produce tokens.
+    Util para ordenar candidatos de busqueda por relevancia sin exigir match exacto.
+    """
     needle_tokens = _tokens(needle)
     candidate_tokens = _tokens(candidate)
     if not needle_tokens or not candidate_tokens:
@@ -56,12 +73,22 @@ def _coverage_score(needle: str, candidate: str) -> float:
 
 
 def _like_match(needle: str, candidate: str) -> bool:
+    """True si TODOS los tokens de needle estan presentes en candidate (match exacto por tokens).
+
+    Usado para verificar que el chat actualmente abierto en WA Web corresponde
+    al contacto objetivo antes de escribir un mensaje.
+    """
     needle_tokens = _tokens(needle)
     candidate_tokens = _tokens(candidate)
     return all(token in candidate_tokens for token in needle_tokens) if needle_tokens else False
 
 
 def _pids_by_name_win(name: str) -> set[int]:
+    """Retorna PIDs de procesos Windows por nombre usando PowerShell.
+
+    Usa Get-Process en lugar de tasklist porque devuelve directamente enteros
+    y maneja correctamente procesos con multiples instancias del mismo nombre.
+    """
     try:
         ps_script = (
             f"(Get-Process -Name '{name}' -ErrorAction SilentlyContinue "
@@ -80,6 +107,12 @@ def _pids_by_name_win(name: str) -> set[int]:
 
 
 def _existing_pids(browser_exe: str) -> set[int]:
+    """Retorna PIDs activos del proceso del browser (cross-platform).
+
+    En Windows resuelve el nombre del proceso segun el ejecutable (opera, brave,
+    msedge, chrome). En Linux/Mac usa pgrep -f. Se usa para capturar una linea
+    base de PIDs antes de lanzar el browser y para detectar instancias zombie.
+    """
     if os.name != "nt":
         try:
             out = subprocess.run(["pgrep", "-f", browser_exe], capture_output=True, text=True, timeout=6)
@@ -100,6 +133,13 @@ def _existing_pids(browser_exe: str) -> set[int]:
 
 @dataclass
 class BrowserRuntimeSettings:
+    """Parametros de conexion y comportamiento del BrowserWorker.
+
+    Instanciada por la GUI y pasada al worker via settings_provider.
+    Todos los campos tienen valores por defecto seguros para que la GUI
+    solo deba especificar los campos que difieren del comportamiento estandar.
+    """
+
     browser: str
     browser_paths: Dict[str, str]
     remote_port: int = 9222
@@ -178,6 +218,11 @@ class BrowserWorker(threading.Thread):
         self._refresh_settings()
 
     def _refresh_settings(self) -> None:
+        """Actualiza parametros del worker desde el ConfigStore (permite cambios en caliente sin reiniciar).
+
+        Se invoca al inicio del constructor y antes de cada conexion CDP, de modo
+        que el usuario pueda cambiar browser, puerto o timeouts sin reiniciar el worker.
+        """
         config = self._settings_provider()
         self.browser_choice = config.browser
         self.browser_paths = dict(config.browser_paths or {})
@@ -197,6 +242,12 @@ class BrowserWorker(threading.Thread):
         self.browser_extra_args = tuple(str(arg).strip() for arg in raw_extra_args if str(arg).strip())
 
     def _resolve_user_data_dir(self) -> str:
+        """Resuelve el directorio del perfil del browser; relativo al .exe o al CWD segun el modo de ejecucion.
+
+        Si user_data_dir esta vacio, crea el subdirectorio whats_profile/<browser>
+        junto al ejecutable (modo frozen/PyInstaller) o junto al CWD (modo desarrollo).
+        Rutas absolutas configuradas por el usuario se usan tal cual.
+        """
         base_dir = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.getcwd()
         raw_value = self.user_data_dir.strip()
         if raw_value:
@@ -207,6 +258,7 @@ class BrowserWorker(threading.Thread):
         return os.path.abspath(os.path.join(base_dir, "whats_profile", self.browser_choice.lower()))
 
     def _build_browser_launch_args(self, exec_path: str, profile_dir: str) -> list[str]:
+        """Construye los argumentos CLI para lanzar el browser con debugging remoto habilitado."""
         args = [
             exec_path,
             f"--remote-debugging-port={self.remote_port}",
@@ -220,6 +272,7 @@ class BrowserWorker(threading.Thread):
 
     @staticmethod
     def _is_port_available(port: int) -> bool:
+        """True si el puerto TCP esta libre para bind (no ocupado por otro proceso)."""
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
@@ -229,6 +282,12 @@ class BrowserWorker(threading.Thread):
                 return False
 
     def _resolve_launch_port(self) -> int:
+        """Devuelve el puerto CDP a usar; busca uno libre si el preferido esta ocupado.
+
+        Busca hasta 30 puertos consecutivos a partir del puerto configurado.
+        Si ningun candidato esta libre, retorna el puerto preferido de todas formas
+        para que el proceso falle con un error descriptivo del sistema operativo.
+        """
         preferred = int(self.remote_port)
         if self._is_port_available(preferred):
             return preferred
@@ -325,6 +384,12 @@ class BrowserWorker(threading.Thread):
                 self._hard_recover("keepalive")
 
     def call(self, cmd: str, timeout: Optional[float] = None, **kwargs):
+        """Envia un comando al worker via cola y bloquea hasta recibir respuesta o timeout.
+
+        Lanza TimeoutError si el worker no responde antes del limite.
+        Lanza RuntimeError con el mensaje del error si el comando fallo en el worker.
+        Puede llamarse desde cualquier hilo (tipicamente el hilo de la GUI).
+        """
         done = threading.Event()
         out: Dict[str, object] = {}
         self.req_q.put((cmd, kwargs, done, out))
@@ -335,6 +400,7 @@ class BrowserWorker(threading.Thread):
         return out.get("result")
 
     def stop(self) -> None:
+        """Senala al worker que debe detenerse en el proximo ciclo del bucle principal."""
         self._stop_event.set()
 
     def _exec_cmd(self, cmd: str, kwargs: Dict[str, object]):
@@ -386,12 +452,14 @@ class BrowserWorker(threading.Thread):
             raise
 
     def _is_context_alive(self) -> bool:
+        """True si el contexto CDP tiene al menos una pagina (proxy de conexion viva)."""
         try:
             return self.context is not None and len(self.context.pages) >= 0
         except Exception:
             return False
 
     def _is_page_alive(self) -> bool:
+        """True si la pagina Playwright no esta cerrada."""
         try:
             return self.page is not None and not self.page.is_closed()
         except Exception:
@@ -412,6 +480,12 @@ class BrowserWorker(threading.Thread):
         return False
 
     def _capture_launched_pids(self, exec_path: str) -> None:
+        """Registra los PIDs que el worker lanzo para poder matarlos al shutdown.
+
+        Calcula la diferencia entre los PIDs existentes post-launch y la linea base
+        capturada antes de lanzar. Tambien agrega el PID directo del Popen si esta disponible.
+        Solo guarda enteros positivos validos.
+        """
         launched: set[int] = set()
         try:
             post = _existing_pids(exec_path)
@@ -940,6 +1014,7 @@ class BrowserWorker(threading.Thread):
         return True
 
     def _dismiss_overlays(self) -> None:
+        """Cierra overlays o menus abiertos presionando Escape."""
         try:
             self.page.keyboard.press("Escape")
             self.page.wait_for_timeout(120)
@@ -947,6 +1022,7 @@ class BrowserWorker(threading.Thread):
             pass
 
     def _close_attach_menu(self) -> None:
+        """Cierra el menu de adjuntos si esta visible (evita que bloquee el compositor)."""
         if self.page is None:
             return
         try:
@@ -1045,10 +1121,17 @@ class BrowserWorker(threading.Thread):
         return self._get_header_name()
 
     def _is_in_chat(self, contact: str) -> bool:
+        """True si el chat actualmente abierto en WA Web corresponde al contacto indicado."""
         active = self._get_active_chat_from_composer()
         return _like_match(contact, active)
 
     def _focus_global_search(self):
+        """Enfoca y limpia el cuadro de busqueda global del panel lateral de WhatsApp Web.
+
+        Retorna el elemento del cuadro de busqueda si lo encontro, o None si fallo.
+        Prueba multiples selectores en orden de confiabilidad antes de caer al
+        selector por role ARIA (mas resistente a cambios de WA Web).
+        """
         page = self.page
         if page is None:
             return None
@@ -1099,6 +1182,11 @@ class BrowserWorker(threading.Thread):
             return None
 
     def _clear_global_search(self) -> None:
+        """Limpia el texto del cuadro de busqueda global sin cerrarlo necesariamente.
+
+        Se usa despues de seleccionar un contacto para dejar el panel lateral
+        en estado limpio y evitar que resultados previos contaminen la siguiente busqueda.
+        """
         page = self.page
         if page is None:
             return
@@ -1136,6 +1224,11 @@ class BrowserWorker(threading.Thread):
                 continue
 
     def _type_search_variants(self, contact: str) -> None:
+        """Escribe el nombre del contacto en el buscador; intenta variantes si la primera no produce resultados.
+
+        Variantes probadas: nombre original, tokens separados por espacio, tokens concatenados sin espacio.
+        Retorna en cuanto detecta al menos un elemento de resultado visible en el panel.
+        """
         page = self.page
         if page is None:
             return
@@ -1166,6 +1259,16 @@ class BrowserWorker(threading.Thread):
                 pass
 
     def _collect_candidates(self):
+        """Recolecta elementos DOM candidatos a ser el contacto buscado, en orden de prioridad de fuente.
+
+        Fuentes consultadas (de mayor a menor prioridad):
+        1. Resultados del panel de busqueda de WA Web (data-testid especificos).
+        2. role='row' o 'listitem' dentro del panel de busqueda.
+        3. role='gridcell' global (lista de chats).
+        4. cell-frame-container generico.
+        5. span[title] como ultima opcion.
+        Cada candidato se representa como (tipo, nombre, nodo, indice_base).
+        """
         page = self.page
         candidates = []
         if page is None:
@@ -1261,6 +1364,12 @@ class BrowserWorker(threading.Thread):
         return candidates
 
     def _rank_candidates(self, contact: str, candidates):
+        """Ordena los candidatos por similitud con el nombre buscado (cobertura de tokens + posicion).
+
+        La formula de score combina: cobertura de tokens (peso 5.0), si empieza por el
+        primer token del nombre buscado (peso 1.5), penalizacion por diferencia de longitud,
+        y bonificacion por posicion mas alta en la lista. Retorna lista ordenada descendente.
+        """
         tokens = _tokens(contact)
         first = tokens[0] if tokens else ""
         ranked = []
@@ -1283,6 +1392,8 @@ class BrowserWorker(threading.Thread):
         page = self.page
         if page is None:
             return False
+        # POR QUE: usar JS en lugar de Playwright.click() — los data-testid cambian con cada version de WA Web;
+        # el DOM-walking por role/tabindex es mas estable.
         try:
             result = page.evaluate("""
                 (contact) => {
@@ -1346,6 +1457,7 @@ class BrowserWorker(threading.Thread):
         return False
 
     def _wait_header(self, contact: str, timeout_ms: int = 9000) -> bool:
+        """Espera hasta que el header de WA Web confirme que el chat del contacto esta abierto."""
         end_time = time.time() + (timeout_ms / 1000.0)
         while time.time() < end_time:
             if self._is_in_chat(contact):
@@ -1485,6 +1597,12 @@ class BrowserWorker(threading.Thread):
         return self._is_in_chat(contact)
 
     def _get_composer_for_contact(self):
+        """Localiza el elemento contenteditable del compositor de mensajes en el footer.
+
+        Intenta selectores en orden de especificidad descendente: desde aria-label exacto
+        hasta el contenteditable generico del footer. Retorna una tupla (node, container)
+        donde node es el parrafo interno (si existe) y container es el div raiz.
+        """
         page = self.page
         last_error = None
         for selector in (
@@ -1515,6 +1633,12 @@ class BrowserWorker(threading.Thread):
         raise RuntimeError(f"No se encontro el compositor del chat: {last_error}")
 
     def _prime_composer(self, node) -> None:
+        """Activa el foco del compositor y asegura que este listo para recibir texto.
+
+        Cierra menus de adjuntos, hace scroll al nodo, lo enfoca via JS y via click,
+        y dispara un Space+Backspace para despertar el editor Lexical de WA Web (que
+        puede estar en estado inerte si no recibio interaccion previa del usuario).
+        """
         page = self.page
         self._close_attach_menu()
         try:
@@ -1537,6 +1661,7 @@ class BrowserWorker(threading.Thread):
         self._close_attach_menu()
 
     def _count_outgoing_messages(self) -> int:
+        """Cuenta los mensajes salientes visibles en el chat actual (para detectar si se envio uno nuevo)."""
         page = self.page
         if page is None:
             return 0
@@ -1551,6 +1676,11 @@ class BrowserWorker(threading.Thread):
         return 0
 
     def _wait_outgoing_increment(self, base_count: int, timeout_ms: int = 6000) -> bool:
+        """Espera a que el contador de mensajes salientes aumente respecto al valor base.
+
+        Complementa a _verify_message_sent para casos en que el texto del mensaje
+        no aparece en pantalla de inmediato (mensajes largos o con formato especial).
+        """
         page = self.page
         if page is None:
             return False
@@ -1568,6 +1698,11 @@ class BrowserWorker(threading.Thread):
         return False
 
     def _verify_message_sent(self, text: str, timeout_ms: int = 9000) -> bool:
+        """Verifica que el texto del mensaje aparezca en los mensajes salientes del chat.
+
+        Normaliza el texto antes de comparar para tolerar diferencias de saltos de linea.
+        Para textos largos (>= 6 chars) acepta coincidencia parcial (uno contiene al otro).
+        """
         page = self.page
         end = time.time() + timeout_ms / 1000.0
         normalize = lambda value: re.sub(r"\s+", " ", re.sub(r"\r\n|\r", "\n", value)).strip()
@@ -1598,9 +1733,11 @@ class BrowserWorker(threading.Thread):
 
     @staticmethod
     def _normalized_text(value: str) -> str:
+        """Normaliza saltos de linea y espacios multiples para comparaciones de texto."""
         return re.sub(r"\s+", " ", re.sub(r"\r\n|\r", "\n", value or "")).strip()
 
     def _read_composer_text(self, node, container) -> str:
+        """Lee el texto actual del compositor (prueba node y container como fallback)."""
         for target in (node, container):
             try:
                 value = target.inner_text(timeout=300)
@@ -1612,6 +1749,7 @@ class BrowserWorker(threading.Thread):
         return ""
 
     def _wait_composer_cleared(self, node, container, timeout_ms: int = 3000) -> bool:
+        """Espera hasta que el compositor quede vacio (indica que el mensaje fue enviado)."""
         page = self.page
         if page is None:
             return False
@@ -1749,6 +1887,7 @@ class BrowserWorker(threading.Thread):
             return False
 
     def _close_our_pages(self) -> None:
+        """Cierra solo las paginas que el worker abrio (no cierra pestanas del usuario)."""
         for page in list(self._opened_pages):
             try:
                 page.close()
@@ -1757,6 +1896,13 @@ class BrowserWorker(threading.Thread):
         self._opened_pages.clear()
 
     def _kill_process_tree(self) -> None:
+        """Mata los procesos del browser que el worker lanzo (no afecta instancias preexistentes).
+
+        En Windows usa taskkill /T /F para matar el arbol completo de procesos hijo.
+        En Unix usa SIGTERM seguido de terminate() en el Popen. Solo actua sobre los PIDs
+        registrados en _launched_pids; nunca toca instancias del browser ya existentes
+        antes de que el worker iniciara.
+        """
         target_pids = set(self._launched_pids)
         try:
             if self.browser_process and self.browser_process.pid:
