@@ -195,7 +195,7 @@ class WhatsAppSchedulerApp:
         self.browser_path_var = tk.StringVar()
 
         global_cfg = self.config_store.data.get("global", {})
-        self.version = str(global_cfg.get("version", "8.9.0"))
+        self.version = str(global_cfg.get("version", "8.9.1"))
         self._active_theme: str = str(self.config_store.get_global("theme", "light"))
         # Aplicar modo de apariencia a widgets CustomTkinter antes de crearlos
         ctk.set_appearance_mode("dark" if self._active_theme == "dark" else "light")
@@ -458,13 +458,70 @@ class WhatsAppSchedulerApp:
         canvas.create_window((0, 0), window=main_frame, anchor="nw")
         main_frame.bind("<Configure>", lambda event: canvas.configure(scrollregion=canvas.bbox("all")))
 
+        # Barra horizontal de botones — encima del log, debajo del área central
+        # Se crea ANTES del log_frame para que el orden de pack (BOTTOM) sea correcto:
+        # btn_bar queda sobre log_frame cuando ambos están packed con side=BOTTOM.
+        btn_bar = tk.Frame(self.root, bg=_C_BG_MAIN, pady=6)
+        btn_bar.pack(side=tk.BOTTOM, fill=tk.X)
+        self._btn_bar = btn_bar
+
+        # Botón principal: Programar mensajes — CTkButton con esquinas redondeadas
+        btn_schedule = ctk.CTkButton(
+            btn_bar,
+            text=self.i18n.t("btn_schedule"),
+            command=self.schedule_all_messages,
+            fg_color=_C_PRIMARY,
+            hover_color=_C_ACTION,
+            text_color="#FFFFFF",
+            font=ctk.CTkFont("Segoe UI", 11, weight="bold"),
+            corner_radius=8,
+            height=42,
+            width=230,
+            cursor="hand2",
+        )
+        btn_schedule.pack(side=tk.LEFT, padx=(20, 6), pady=4)
+        self._btn_schedule = btn_schedule
+
+        # Botón secundario: Salir — tono gris oscuro, menos prominente
+        btn_exit = ctk.CTkButton(
+            btn_bar,
+            text=self.i18n.t("btn_exit"),
+            command=lambda: self.root.event_generate("<<ExitRequested>>"),
+            fg_color=_C_EXIT,
+            hover_color=_C_EXIT_H,
+            text_color="#FFFFFF",
+            font=ctk.CTkFont("Segoe UI", 11, weight="bold"),
+            corner_radius=8,
+            height=42,
+            width=230,
+            cursor="hand2",
+        )
+        btn_exit.pack(side=tk.LEFT, padx=(0, 6), pady=4)
+        self._btn_exit = btn_exit
+
+        # Botón de donaciones "Cómprame una cerveza" — ámbar, alineado a la derecha
+        btn_donate = ctk.CTkButton(
+            btn_bar,
+            text=self.i18n.t("btn_donate"),
+            command=lambda: webbrowser.open(_DONATE_URL),
+            fg_color="#F5A623",
+            hover_color="#D4891A",
+            text_color="#FFFFFF",
+            font=ctk.CTkFont("Segoe UI", 9),
+            corner_radius=6,
+            height=30,
+            width=190,
+            cursor="hand2",
+        )
+        btn_donate.pack(side=tk.RIGHT, padx=(0, 20), pady=4)
+
         # Área de logs con fondo oscuro para alto contraste (terminal style)
         log_frame = tk.Frame(self.root, bg=_C_LOG_BG)
         log_frame.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=False)
         self._log_frame = log_frame
         self.log_text = tk.Text(
             log_frame,
-            height=8,
+            height=5,
             bg=_C_LOG_BG,
             fg=_C_LOG_FG,
             font=_F_MONO,
@@ -496,56 +553,6 @@ class WhatsAppSchedulerApp:
             num_messages = int(self.config_store.get_global(f"num_messages_group{group_id}", 4))
             pre_config = self.config_store.get_group_messages(group_id)
             self.groups[group_id] = self._create_message_blocks(frame, num_messages, group_id, pre_config)
-
-        # Botón principal: Programar mensajes — CTkButton con esquinas redondeadas
-        btn_schedule = ctk.CTkButton(
-            self.root,
-            text=self.i18n.t("btn_schedule"),
-            command=self.schedule_all_messages,
-            fg_color=_C_PRIMARY,
-            hover_color=_C_ACTION,
-            text_color="#FFFFFF",
-            font=ctk.CTkFont("Segoe UI", 11, weight="bold"),
-            corner_radius=8,
-            height=42,
-            width=230,
-            cursor="hand2",
-        )
-        btn_schedule.pack(side=tk.TOP, pady=(8, 3))
-        self._btn_schedule = btn_schedule
-
-        # Botón secundario: Salir — tono gris oscuro, menos prominente
-        btn_exit = ctk.CTkButton(
-            self.root,
-            text=self.i18n.t("btn_exit"),
-            command=lambda: self.root.event_generate("<<ExitRequested>>"),
-            fg_color=_C_EXIT,
-            hover_color=_C_EXIT_H,
-            text_color="#FFFFFF",
-            font=ctk.CTkFont("Segoe UI", 11, weight="bold"),
-            corner_radius=8,
-            height=42,
-            width=230,
-            cursor="hand2",
-        )
-        btn_exit.pack(side=tk.TOP, pady=(0, 8))
-        self._btn_exit = btn_exit
-
-        # Botón de donaciones "Cómprame una cerveza" — ámbar, esquinas redondeadas
-        btn_donate = ctk.CTkButton(
-            self.root,
-            text=self.i18n.t("btn_donate"),
-            command=lambda: webbrowser.open(_DONATE_URL),
-            fg_color="#F5A623",
-            hover_color="#D4891A",
-            text_color="#FFFFFF",
-            font=ctk.CTkFont("Segoe UI", 9),
-            corner_radius=6,
-            height=30,
-            width=190,
-            cursor="hand2",
-        )
-        btn_donate.pack(side=tk.BOTTOM, pady=(0, 4))
 
         self.root.bind_all("<Alt-r>", lambda _: self._reset_default_paths())
         self.root.bind_all("<Alt-g>", lambda _: self.save_messages_config())
@@ -608,6 +615,10 @@ class WhatsAppSchedulerApp:
         if hasattr(self, "_top_frame"):
             self._top_frame.configure(bg=th["bg_top"])
             _theme_children(self._top_frame, th, area="top")
+
+        # Barra de botones horizontal
+        if hasattr(self, "_btn_bar"):
+            self._btn_bar.configure(bg=th["bg_main"])
 
         # Frame central y canvas
         if hasattr(self, "_mid_frame"):
@@ -962,7 +973,7 @@ class WhatsAppSchedulerApp:
                 insertbackground=_C_TEXT,
             )
             entry_contact.insert(0, pre.get("contact", ""))
-            entry_contact.pack(padx=5, pady=2)
+            entry_contact.pack(fill=tk.X, padx=5, pady=2)
             entries_contact.append(entry_contact)
 
             # --- MENSAJE: campo de texto + badge de prefijo automático + fila de toggle ---
@@ -990,7 +1001,7 @@ class WhatsAppSchedulerApp:
                 padx=4, pady=4,
             )
             text_message.insert(tk.END, pre.get("message", ""))
-            text_message.pack(padx=5, pady=(0, 2))
+            text_message.pack(fill=tk.X, padx=5, pady=(0, 2))
             entries_message.append(text_message)
 
             # Fila de control del prefijo automático: checkbox + Entry editable
