@@ -81,6 +81,7 @@ class MessageGroupWidgets:
     send_vars: list[tk.BooleanVar]
     repeat_vars: list[ttk.Combobox]
     days_vars: list[list[tk.BooleanVar]]
+    auto_label_vars: list[tk.BooleanVar]
 
 
 def _theme_children(widget, th: dict, area: str = "main") -> None:
@@ -898,6 +899,7 @@ class WhatsAppSchedulerApp:
         send_vars: list[tk.BooleanVar] = []
         repeat_vars: list[ttk.Combobox] = []
         days_vars_all: list[list[tk.BooleanVar]] = []
+        auto_label_vars: list[tk.BooleanVar] = []
 
         hours = [str(i) for i in range(1, 13)]
         minutes = [f"{i:02d}" for i in range(60)]
@@ -954,6 +956,15 @@ class WhatsAppSchedulerApp:
             text_message.insert(tk.END, pre.get("message", ""))
             text_message.pack(padx=5, pady=2)
             entries_message.append(text_message)
+
+            var_auto_label = tk.BooleanVar(value=bool(pre.get("auto_label", False)))
+            auto_label_vars.append(var_auto_label)
+            tk.Checkbutton(
+                sub,
+                text="Agregar [Mensaje Programado Automáticamente]",
+                variable=var_auto_label,
+                font=_F_SMALL, takefocus=True,
+            ).pack(anchor="w", padx=5, pady=(0, 4))
 
             tk.Label(sub, text=self.i18n.t("lbl_send_date"), font=_F_BODY,
                      takefocus=True).pack(anchor="w", padx=5)
@@ -1081,6 +1092,7 @@ class WhatsAppSchedulerApp:
             send_vars=send_vars,
             repeat_vars=repeat_vars,
             days_vars=days_vars_all,
+            auto_label_vars=auto_label_vars,
         )
 
     def stop_repetition(self, group: int, index: int, combobox: ttk.Combobox) -> None:
@@ -1226,6 +1238,8 @@ class WhatsAppSchedulerApp:
 
             contact = widgets.entries_contact[idx].get().strip()
             message_text = widgets.entries_message[idx].get("1.0", tk.END).strip()
+            if widgets.auto_label_vars[idx].get():
+                message_text = "[Mensaje Programado Automáticamente] " + message_text
             if not contact or not message_text:
                 continue
 
@@ -1530,6 +1544,7 @@ class WhatsAppSchedulerApp:
                         "repeat": repeat_canonical,
                         "send": bool(widgets.send_vars[idx].get()),
                         "days": days_selected,
+                        "auto_label": bool(widgets.auto_label_vars[idx].get()),
                     }
                 )
             self.config_store.set_group_messages(group_id, payload)

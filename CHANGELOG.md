@@ -1,5 +1,9 @@
 # Changelog
 
+## [v8.8.1] — 2026-06-10
+### Added
+- **Checkbox "Agregar [Mensaje Programado Automáticamente]":** cada bloque de mensaje tiene un nuevo checkbox que, al estar marcado, antepone automáticamente el texto `[Mensaje Programado Automáticamente]` al inicio del mensaje enviado. Permite que el destinatario sepa que el mensaje fue generado automáticamente. La preferencia se guarda en `config.json` por mensaje (`auto_label`).
+
 ## [v8.8.0] — 2026-06-10
 ### Improved
 - **Cursor invisible en campos de texto:** bug en `_theme_children()` aplicaba colores de fondo del área de log (`bg_log`/`text_log`) a todos los widgets `tk.Text`, incluyendo los campos de mensaje. Esto causaba fondo oscuro sin `insertbackground`, haciendo el cursor invisible en modo oscuro y claro. Fix: los campos de mensaje usan `bg_card`/`text` con `insertbackground=text` explícito; el log se estiliza por separado en `_apply_theme()`.
