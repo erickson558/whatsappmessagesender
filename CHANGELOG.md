@@ -1,5 +1,13 @@
 # Changelog
 
+## [v8.9.3] — 2026-06-10
+### Improved
+- **Selectores de hora rediseñados:** los tres `tk.Listbox` (hora, minuto, AM/PM) con scrollbar interna fueron reemplazados por `ttk.Spinbox` compactos. El selector de hora ahora ocupa una sola línea, es más claro y no muestra ítems apilados con scroll.
+- **Colores tema oscuro mejorados:** `bg_main` → `#111827`, `bg_card` → `#1E2D3D`, `bg_top` → `#1A3A5C` para mayor contraste y legibilidad en modo oscuro.
+- **LabelFrame con borde visible:** en modo oscuro los `LabelFrame` de Programación y Repetición ahora muestran borde `GROOVE` visible y título con color de texto del tema.
+- **Altura de campo de mensaje reducida:** `height=3` → `height=2` en los `tk.Text` de mensaje para mayor densidad visual.
+- **Spinbox con tema dinámico:** estilo `TSpinbox` aplicado via `ttk.Style` para que los nuevos Spinbox respeten los colores de fondo, texto y flechas del tema activo (claro/oscuro).
+
 ## [v8.9.2] — 2026-06-10
 ### Fixed
 - **Canvas frame no llenaba el ancho completo:** el `main_frame` dentro del `tk.Canvas` central no se redimensionaba al ancho de la ventana, dejando la mitad derecha del área de tarjetas con fondo vacío (canvas background). Fix: se captura el ID retornado por `canvas.create_window()` y se vincula `<Configure>` en el canvas para llamar `itemconfig(width=event.width)`, forzando que el frame interno siempre ocupe todo el ancho disponible y el grid de dos columnas se expanda correctamente.

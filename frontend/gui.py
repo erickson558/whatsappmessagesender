@@ -59,12 +59,14 @@ _THEMES: dict = {
         "badge_bg": "#C8E6C9", "badge_fg": "#1B5E20",
     },
     "dark": {
-        "bg_main": "#1A1A2E", "bg_card": "#16213E", "bg_top": "#0F3460", "bg_log": "#0D1117",
+        # Colores mejorados V8.9.2: mayor contraste entre bg_main y bg_card,
+        # bg_card más legible, bg_top diferenciado para la barra superior.
+        "bg_main": "#111827", "bg_card": "#1E2D3D", "bg_top": "#1A3A5C", "bg_log": "#0D1117",
         "text": "#E0E0E0", "text_muted": "#A0AEC0", "text_log": "#7EE787",
         "btn_p": "#25D366", "btn_p_h": "#128C7E",
         "btn_s": "#4A5568", "btn_s_h": "#2D3748",
         "btn_t": "#4299E1", "btn_t_h": "#2B6CB0",
-        "tab_bg": "#16213E", "tab_fg": "#E0E0E0", "tab_sel": "#25D366", "tab_sel_fg": "#000000",
+        "tab_bg": "#1E2D3D", "tab_fg": "#E0E0E0", "tab_sel": "#25D366", "tab_sel_fg": "#000000",
         "clock": "#25D366", "toggle_lbl": "☀️ Claro",
         "border": "#3A4060",
         "badge_bg": "#1A3A28", "badge_fg": "#81C995",
@@ -77,9 +79,11 @@ class MessageGroupWidgets:
     entries_contact: list[tk.Entry]
     entries_message: list[tk.Text]
     entries_date: list[DateEntry]
-    listbox_hour: list[tk.Listbox]
-    listbox_minute: list[tk.Listbox]
-    listbox_ampm: list[tk.Listbox]
+    # V8.9.2: migrados de tk.Listbox a ttk.Spinbox para UI mas compacta y legible.
+    # Los nombres se mantienen igual para no romper referencias externas.
+    listbox_hour: list[ttk.Spinbox]
+    listbox_minute: list[ttk.Spinbox]
+    listbox_ampm: list[ttk.Spinbox]
     send_vars: list[tk.BooleanVar]
     repeat_vars: list[ttk.Combobox]
     days_vars: list[list[tk.BooleanVar]]
@@ -104,8 +108,10 @@ def _theme_children(widget, th: dict, area: str = "main") -> None:
                     else:
                         child.configure(bg=bg)
                     if cls == "LabelFrame":
+                        # V8.9.2: relief=GROOVE hace visible el borde en modo oscuro;
+                        # fg del titulo del LabelFrame coincide con el color de texto del tema.
                         try:
-                            child.configure(fg=th["text"])
+                            child.configure(fg=th["text"], relief=tk.GROOVE)
                         except Exception:
                             pass
                 elif cls == "Label":
@@ -195,7 +201,7 @@ class WhatsAppSchedulerApp:
         self.browser_path_var = tk.StringVar()
 
         global_cfg = self.config_store.data.get("global", {})
-        self.version = str(global_cfg.get("version", "8.9.2"))
+        self.version = str(global_cfg.get("version", "8.9.3"))
         self._active_theme: str = str(self.config_store.get_global("theme", "light"))
         # Aplicar modo de apariencia a widgets CustomTkinter antes de crearlos
         ctk.set_appearance_mode("dark" if self._active_theme == "dark" else "light")
@@ -658,6 +664,15 @@ class WhatsAppSchedulerApp:
         style.map("TCombobox",
                   fieldbackground=[("readonly", th["bg_card"])],
                   foreground=[("readonly", th["text"])])
+        # V8.9.2: Estilo para los Spinbox de hora/minuto/AM-PM — se adaptan al tema activo
+        style.configure("TSpinbox",
+                        fieldbackground=th["bg_card"],
+                        foreground=th["text"],
+                        background=th["bg_top"],
+                        font=_F_BODY,
+                        arrowcolor=th["text"],
+                        selectbackground=th["btn_p"],
+                        selectforeground="#FFFFFF")
 
     # =========================================================================
     # BARRA DE MENÚS
@@ -925,9 +940,10 @@ class WhatsAppSchedulerApp:
         entries_contact: list[tk.Entry] = []
         entries_message: list[tk.Text] = []
         entries_date: list[DateEntry] = []
-        listbox_hour: list[tk.Listbox] = []
-        listbox_minute: list[tk.Listbox] = []
-        listbox_ampm: list[tk.Listbox] = []
+        # V8.9.2: Spinbox en lugar de Listbox — nombres mantenidos por compatibilidad
+        listbox_hour: list[ttk.Spinbox] = []
+        listbox_minute: list[ttk.Spinbox] = []
+        listbox_ampm: list[ttk.Spinbox] = []
         send_vars: list[tk.BooleanVar] = []
         repeat_vars: list[ttk.Combobox] = []
         days_vars_all: list[list[tk.BooleanVar]] = []
@@ -995,7 +1011,7 @@ class WhatsAppSchedulerApp:
             # badge_frame NO se hace pack aquí; se controla con _on_auto_toggle
 
             text_message = tk.Text(
-                sub, height=3, width=50, takefocus=True,
+                sub, height=2, width=50, takefocus=True,  # V8.9.2: height 3→2 para layout mas compacto
                 font=_F_BODY, relief=tk.FLAT,
                 highlightthickness=1, highlightbackground="#C8CDD1",
                 highlightcolor=_C_PRIMARY,
@@ -1089,75 +1105,74 @@ class WhatsAppSchedulerApp:
             ).pack(side=tk.LEFT, padx=5)
             entries_date.append(date_entry)
 
-            # Fila de hora (listboxes hora + minuto + AM/PM con scrollbars internos)
+            # Fila de hora — V8.9.2: Spinbox reemplaza a los Listbox+scrollbar anteriores.
+            # Resultado: selector de hora compacto, legible y sin scrollbar interna.
             time_row = tk.Frame(sched_frame)
             time_row.pack(fill="x", pady=(4, 2))
             tk.Label(time_row, text="Hora:", font=_F_SMALL).pack(side=tk.LEFT)
 
-            frame_hour = tk.Frame(time_row)
-            frame_hour.pack(side=tk.LEFT, padx=(4, 0))
-            lb_hour = tk.Listbox(
-                frame_hour, height=3, width=4,
-                exportselection=False, selectbackground="blue", takefocus=True,
+            # Spinbox hora: valores 1-12 con wrap circular
+            lb_hour = ttk.Spinbox(
+                time_row,
+                from_=1, to=12,
+                width=3,
+                wrap=True,
+                font=_F_BODY,
+                takefocus=True,
             )
-            for hour in hours:
-                lb_hour.insert(tk.END, hour)
-            lb_hour.pack(side="left", fill="y")
-            sb_hour = tk.Scrollbar(frame_hour, orient="vertical", command=lb_hour.yview, width=10)
-            lb_hour.configure(yscrollcommand=sb_hour.set)
-            sb_hour.pack(side="right", fill="y")
+            lb_hour.pack(side=tk.LEFT, padx=(4, 0))
             listbox_hour.append(lb_hour)
-            self._bind_listbox_keyboard(lb_hour)
 
             tk.Label(time_row, text=":", font=("Segoe UI", 12, "bold")).pack(side=tk.LEFT, padx=2)
 
-            frame_min = tk.Frame(time_row)
-            frame_min.pack(side=tk.LEFT)
-            lb_min = tk.Listbox(
-                frame_min, height=3, width=4,
-                exportselection=False, selectbackground="blue", takefocus=True,
+            # Spinbox minuto: valores 00-59 con zfill para mostrar siempre 2 dígitos
+            lb_min = ttk.Spinbox(
+                time_row,
+                values=minutes,   # lista ["00","01",...,"59"] ya construida arriba
+                width=4,
+                wrap=True,
+                font=_F_BODY,
+                takefocus=True,
             )
-            for minute in minutes:
-                lb_min.insert(tk.END, minute)
-            lb_min.pack(side="left", fill="y")
-            sb_min = tk.Scrollbar(frame_min, orient="vertical", command=lb_min.yview, width=10)
-            lb_min.configure(yscrollcommand=sb_min.set)
-            sb_min.pack(side="right", fill="y")
+            lb_min.pack(side=tk.LEFT)
             listbox_minute.append(lb_min)
-            self._bind_listbox_keyboard(lb_min)
 
-            lb_ampm = tk.Listbox(
-                time_row, height=2, width=5,
-                exportselection=False, selectbackground="blue", takefocus=True,
+            # Spinbox AM/PM
+            lb_ampm = ttk.Spinbox(
+                time_row,
+                values=ampm_options,
+                width=5,
+                wrap=True,
+                font=_F_BODY,
+                takefocus=True,
             )
-            for ampm in ampm_options:
-                lb_ampm.insert(tk.END, ampm)
-            lb_ampm.pack(side=tk.LEFT, padx=4)
+            lb_ampm.pack(side=tk.LEFT, padx=(4, 0))
             listbox_ampm.append(lb_ampm)
-            self._bind_listbox_keyboard(lb_ampm)
 
-            # Preseleccionar valores guardados en los listboxes
+            # Precargar valores guardados en config usando .set() del Spinbox
             if pre.get("hour", ""):
                 try:
-                    idx_hour = hours.index(str(pre["hour"]))
-                    lb_hour.selection_set(idx_hour)
-                    lb_hour.see(idx_hour)
+                    lb_hour.set(str(pre["hour"]))
                 except Exception:
-                    pass
+                    lb_hour.set("12")
+            else:
+                lb_hour.set("12")
+
             if pre.get("minute", "") != "":
                 try:
-                    idx_minute = minutes.index(str(pre["minute"]).zfill(2))
-                    lb_min.selection_set(idx_minute)
-                    lb_min.see(idx_minute)
+                    lb_min.set(str(pre["minute"]).zfill(2))
                 except Exception:
-                    pass
+                    lb_min.set("00")
+            else:
+                lb_min.set("00")
+
             if pre.get("ampm", ""):
                 try:
-                    idx_ampm = ampm_options.index(str(pre["ampm"]).upper())
-                    lb_ampm.selection_set(idx_ampm)
-                    lb_ampm.see(idx_ampm)
+                    lb_ampm.set(str(pre["ampm"]).upper())
                 except Exception:
-                    pass
+                    lb_ampm.set("AM")
+            else:
+                lb_ampm.set("AM")
 
             # --- SECCIÓN REPETICIÓN (LabelFrame con combobox + días) ---
             repeat_lf = tk.LabelFrame(
@@ -1368,17 +1383,21 @@ class WhatsAppSchedulerApp:
                 continue
 
             date_str = widgets.entries_date[idx].get()
-            hour_sel = widgets.listbox_hour[idx].curselection()
-            minute_sel = widgets.listbox_minute[idx].curselection()
-            ampm_sel = widgets.listbox_ampm[idx].curselection()
+            # V8.9.2: Spinbox usa .get() directo en lugar de curselection()+get(idx)
+            hour_str = widgets.listbox_hour[idx].get().strip()
+            minute_str = widgets.listbox_minute[idx].get().strip()
+            ampm_val = widgets.listbox_ampm[idx].get().strip()
 
-            if not hour_sel or not minute_sel or not ampm_sel:
+            if not hour_str or not minute_str or not ampm_val:
                 self.update_status(self.i18n.t("status_no_time", n=idx + 1, group=group_name))
                 return []
 
-            hour_val = int(widgets.listbox_hour[idx].get(hour_sel[0]))
-            minute_val = int(widgets.listbox_minute[idx].get(minute_sel[0]))
-            ampm_val = widgets.listbox_ampm[idx].get(ampm_sel[0])
+            try:
+                hour_val = int(hour_str)
+                minute_val = int(minute_str)
+            except ValueError:
+                self.update_status(self.i18n.t("status_no_time", n=idx + 1, group=group_name))
+                return []
 
             if ampm_val.upper() == "PM" and hour_val != 12:
                 hour_val += 12
@@ -1656,15 +1675,10 @@ class WhatsAppSchedulerApp:
                         "contact": widgets.entries_contact[idx].get().strip(),
                         "message": widgets.entries_message[idx].get("1.0", tk.END).strip(),
                         "date": widgets.entries_date[idx].get(),
-                        "hour": widgets.listbox_hour[idx].get(widgets.listbox_hour[idx].curselection()[0])
-                        if widgets.listbox_hour[idx].curselection()
-                        else "",
-                        "minute": widgets.listbox_minute[idx].get(widgets.listbox_minute[idx].curselection()[0])
-                        if widgets.listbox_minute[idx].curselection()
-                        else "",
-                        "ampm": widgets.listbox_ampm[idx].get(widgets.listbox_ampm[idx].curselection()[0])
-                        if widgets.listbox_ampm[idx].curselection()
-                        else "",
+                        # V8.9.2: Spinbox.get() devuelve el valor actual directamente
+                        "hour": widgets.listbox_hour[idx].get().strip(),
+                        "minute": widgets.listbox_minute[idx].get().strip(),
+                        "ampm": widgets.listbox_ampm[idx].get().strip(),
                         "repeat": repeat_canonical,
                         "send": bool(widgets.send_vars[idx].get()),
                         "days": days_selected,
