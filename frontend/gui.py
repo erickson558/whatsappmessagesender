@@ -195,7 +195,7 @@ class WhatsAppSchedulerApp:
         self.browser_path_var = tk.StringVar()
 
         global_cfg = self.config_store.data.get("global", {})
-        self.version = str(global_cfg.get("version", "8.9.1"))
+        self.version = str(global_cfg.get("version", "8.9.2"))
         self._active_theme: str = str(self.config_store.get_global("theme", "light"))
         # Aplicar modo de apariencia a widgets CustomTkinter antes de crearlos
         ctk.set_appearance_mode("dark" if self._active_theme == "dark" else "light")
@@ -455,8 +455,10 @@ class WhatsAppSchedulerApp:
 
         # Frame interno del canvas con fondo del tema
         main_frame = tk.Frame(canvas, bg=_C_BG_MAIN)
-        canvas.create_window((0, 0), window=main_frame, anchor="nw")
+        _mf_win_id = canvas.create_window((0, 0), window=main_frame, anchor="nw")
         main_frame.bind("<Configure>", lambda event: canvas.configure(scrollregion=canvas.bbox("all")))
+        # Expandir el frame interno al ancho del canvas cuando la ventana se redimensiona
+        canvas.bind("<Configure>", lambda event: canvas.itemconfig(_mf_win_id, width=event.width))
 
         # Barra horizontal de botones — encima del log, debajo del área central
         # Se crea ANTES del log_frame para que el orden de pack (BOTTOM) sea correcto:

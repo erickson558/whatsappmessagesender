@@ -1,5 +1,9 @@
 # Changelog
 
+## [v8.9.2] — 2026-06-10
+### Fixed
+- **Canvas frame no llenaba el ancho completo:** el `main_frame` dentro del `tk.Canvas` central no se redimensionaba al ancho de la ventana, dejando la mitad derecha del área de tarjetas con fondo vacío (canvas background). Fix: se captura el ID retornado por `canvas.create_window()` y se vincula `<Configure>` en el canvas para llamar `itemconfig(width=event.width)`, forzando que el frame interno siempre ocupe todo el ancho disponible y el grid de dos columnas se expanda correctamente.
+
 ## [v8.8.1] — 2026-06-10
 ### Added
 - **Checkbox "Agregar [Mensaje Programado Automáticamente]":** cada bloque de mensaje tiene un nuevo checkbox que, al estar marcado, antepone automáticamente el texto `[Mensaje Programado Automáticamente]` al inicio del mensaje enviado. Permite que el destinatario sepa que el mensaje fue generado automáticamente. La preferencia se guarda en `config.json` por mensaje (`auto_label`).
