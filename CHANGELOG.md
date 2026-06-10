@@ -1,5 +1,9 @@
 # Changelog
 
+## [v8.9.6] — 2026-06-10
+### Fixed
+- **LabelFrame títulos con fondo incorrecto:** en Windows, el área de texto del título de `tk.LabelFrame` ignora el `bg` configurado y usa colores del sistema (blanco/gris), rompiendo el tema oscuro. Solución: los dos LabelFrame de "Programación" y "Repetición" fueron reemplazados por `tk.Frame` + `tk.Label` de título propio, que `_theme_children` puede controlar completamente. El borde visible se mantiene via `highlightthickness=1` con color `border` del tema activo.
+
 ## [v8.9.5] — 2026-06-10
 ### Fixed
 - **Grises eliminados del modo oscuro:** raíz del problema eran los colores del sistema (gris de Windows) que se filtraban en: (a) bordes `relief=GROOVE` de tarjetas y LabelFrames, (b) botones de flechas de `Spinbox`/`Combobox` con `background=bg_top` (azul), (c) paleta oscura con colores muy similares entre sí.

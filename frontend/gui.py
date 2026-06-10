@@ -127,6 +127,10 @@ def _theme_children(widget, th: dict, area: str = "main") -> None:
                                         highlightbackground=th.get("border", "#444C56"),
                                         highlightcolor=th.get("btn_t", "#316DCA"))
                         child_area = "card"
+                    elif getattr(child, "_is_section", False):
+                        child.configure(bg=bg,
+                                        highlightbackground=th.get("border", "#444C56"),
+                                        highlightcolor=th.get("btn_t", "#316DCA"))
                     else:
                         child.configure(bg=bg)
                     if cls == "LabelFrame":
@@ -223,7 +227,7 @@ class WhatsAppSchedulerApp:
         self.browser_path_var = tk.StringVar()
 
         global_cfg = self.config_store.data.get("global", {})
-        self.version = str(global_cfg.get("version", "8.9.5"))
+        self.version = str(global_cfg.get("version", "8.9.6"))
         self._active_theme: str = str(self.config_store.get_global("theme", "light"))
         # Aplicar modo de apariencia a widgets CustomTkinter antes de crearlos
         ctk.set_appearance_mode("dark" if self._active_theme == "dark" else "light")
@@ -1118,12 +1122,14 @@ class WhatsAppSchedulerApp:
             var_auto_label.trace_add("write", lambda *a, fn=_on_auto_toggle: fn())
             _on_auto_toggle()
 
-            # --- SECCIÓN PROGRAMACIÓN (LabelFrame con fecha y hora) ---
-            sched_frame = tk.LabelFrame(
-                sub, text=" \U0001f4c5 Programación ",
-                font=_F_SMALL, padx=5, pady=4,
-            )
-            sched_frame.pack(fill="x", padx=5, pady=(4, 2))
+            # --- SECCIÓN PROGRAMACIÓN ---
+            _sched_outer = tk.Frame(sub, highlightthickness=1, highlightbackground=_C_BG_TOP)
+            _sched_outer._is_section = True
+            _sched_outer.pack(fill="x", padx=5, pady=(4, 2))
+            tk.Label(_sched_outer, text=" \U0001f4c5 Programación ", font=_F_SMALL).pack(
+                anchor="w", padx=2, pady=(2, 1))
+            sched_frame = tk.Frame(_sched_outer, padx=5, pady=4)
+            sched_frame.pack(fill="x")
 
             # Fila de fecha
             date_row = tk.Frame(sched_frame)
@@ -1215,12 +1221,14 @@ class WhatsAppSchedulerApp:
             else:
                 lb_ampm.set("AM")
 
-            # --- SECCIÓN REPETICIÓN (LabelFrame con combobox + días) ---
-            repeat_lf = tk.LabelFrame(
-                sub, text=" \U0001f504 Repetición ",
-                font=_F_SMALL, padx=5, pady=4,
-            )
-            repeat_lf.pack(fill="x", padx=5, pady=(2, 6))
+            # --- SECCIÓN REPETICIÓN ---
+            _repeat_outer = tk.Frame(sub, highlightthickness=1, highlightbackground=_C_BG_TOP)
+            _repeat_outer._is_section = True
+            _repeat_outer.pack(fill="x", padx=5, pady=(2, 6))
+            tk.Label(_repeat_outer, text=" \U0001f504 Repetición ", font=_F_SMALL).pack(
+                anchor="w", padx=2, pady=(2, 1))
+            repeat_lf = tk.Frame(_repeat_outer, padx=5, pady=4)
+            repeat_lf.pack(fill="x")
 
             # Fila del combobox de repetición + botón Detener
             repeat_row = tk.Frame(repeat_lf)
