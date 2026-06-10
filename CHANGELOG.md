@@ -1,5 +1,17 @@
 # Changelog
 
+## [v8.8.0] — 2026-06-10
+### Improved
+- **Cursor invisible en campos de texto:** bug en `_theme_children()` aplicaba colores de fondo del área de log (`bg_log`/`text_log`) a todos los widgets `tk.Text`, incluyendo los campos de mensaje. Esto causaba fondo oscuro sin `insertbackground`, haciendo el cursor invisible en modo oscuro y claro. Fix: los campos de mensaje usan `bg_card`/`text` con `insertbackground=text` explícito; el log se estiliza por separado en `_apply_theme()`.
+- **Entry con cursor invisible:** `tk.Entry` de contacto creados sin `insertbackground`, `highlightthickness` ni fuente. Ahora usan `font=_F_BODY`, `insertbackground=_C_TEXT`, `relief=FLAT`, `highlightthickness=1` con color de focus verde primario.
+- **`tk.Text` de mensaje:** mismos fixes + `padx/pady` para mejor legibilidad interior.
+- **Checkbuttons en modo oscuro:** `_theme_children()` ahora maneja `cls == "Checkbutton"` aplicando `bg`, `fg`, `activebackground` y `selectcolor` del tema activo.
+- **Labels con tipografía consistente:** todos los labels de bloque de mensaje ahora usan `_F_BODY` o `_F_SMALL` (Segoe UI). Título del bloque usa `("Segoe UI", 12, "bold")`.
+- **Botones "Hoy" y "Detener repetición":** estilizados con `_C_ACCENT`/`_C_PRIMARY`, cursor `hand2`, `relief=FLAT`.
+- **Días de la semana:** checkbuttons usan `font=_F_SMALL` para coherencia visual.
+- **Grid de bloques de mensaje:** `frame.columnconfigure(0/1, weight=1)` para que las dos columnas se expandan proporcionalmente al redimensionar la ventana.
+- **`_THEMES`:** clave `"border"` agregada a ambos temas para color de borde de widgets con `highlightthickness`.
+
 ## [v8.7.8] — 2026-06-09
 ### Fixed
 - Splash screen congelado en 30%: `tkcalendar.DateEntry` tardaba ~1s por widget; con 16 bloques de mensaje (4 grupos × 4 mensajes) el splash quedaba bloqueado sin respuesta durante 15-120 segundos según la velocidad del sistema. Fix: se pasa callback `splash_step` a `_build_ui()` para actualizar el progreso en 30%, 38%, 46%, 54% al terminar cada grupo; y se agrega `root.update_idletasks()` dentro del bucle de `_create_message_blocks()` para que el splash permanezca visible y responsive mientras se crean los DateEntry.

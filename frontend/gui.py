@@ -55,6 +55,7 @@ _THEMES: dict = {
         "btn_t": "#128C7E", "btn_t_h": "#075E54",
         "tab_bg": "#FFFFFF", "tab_fg": "#111B21", "tab_sel": "#075E54", "tab_sel_fg": "#FFFFFF",
         "clock": "#075E54", "toggle_lbl": "\U0001f319 Oscuro",
+        "border": "#C8CDD1",
     },
     "dark": {
         "bg_main": "#1A1A2E", "bg_card": "#16213E", "bg_top": "#0F3460", "bg_log": "#0D1117",
@@ -64,6 +65,7 @@ _THEMES: dict = {
         "btn_t": "#4299E1", "btn_t_h": "#2B6CB0",
         "tab_bg": "#16213E", "tab_fg": "#E0E0E0", "tab_sel": "#25D366", "tab_sel_fg": "#000000",
         "clock": "#25D366", "toggle_lbl": "☀️ Claro",
+        "border": "#3A4060",
     },
 }
 
@@ -111,7 +113,12 @@ def _theme_children(widget, th: dict, area: str = "main") -> None:
                                         activebackground=th["btn_t_h"],
                                         relief=tk.FLAT, bd=0)
                 elif cls == "Text":
-                    child.configure(bg=th["bg_log"], fg=th["text_log"])
+                    # Campos de mensaje usan colores de tarjeta; el log_text se estiliza
+                    # por separado en _apply_theme() y no pasa por aqui.
+                    child.configure(bg=th["bg_card"], fg=th["text"],
+                                    insertbackground=th["text"],
+                                    selectbackground=th["btn_p"],
+                                    selectforeground="#FFFFFF")
                 elif cls == "Canvas":
                     child.configure(bg=th["bg_main"], highlightthickness=0)
                 elif cls == "Listbox":
@@ -120,7 +127,15 @@ def _theme_children(widget, th: dict, area: str = "main") -> None:
                                     selectforeground="#FFFFFF")
                 elif cls == "Entry":
                     child.configure(bg=th["bg_card"], fg=th["text"],
-                                    insertbackground=th["text"])
+                                    insertbackground=th["text"],
+                                    highlightbackground=th.get("border", "#C8CDD1"),
+                                    highlightcolor=th["btn_p"],
+                                    selectbackground=th["btn_p"],
+                                    selectforeground="#FFFFFF")
+                elif cls == "Checkbutton":
+                    child.configure(bg=bg, fg=th["text"],
+                                    activebackground=bg, activeforeground=th["text"],
+                                    selectcolor=th["bg_card"])
             except Exception:
                 pass
             _theme_children(child, th, area)
@@ -890,37 +905,58 @@ class WhatsAppSchedulerApp:
         repeat_display_options = self.i18n.repeat_options()
         day_names = self.i18n.days()
 
+        # Dos columnas de igual peso para que los bloques se expandan al redimensionar
+        frame.columnconfigure(0, weight=1)
+        frame.columnconfigure(1, weight=1)
+
         for i in range(num_msgs):
             pre = pre_config[i] if pre_config and i < len(pre_config) else {}
 
-            sub = tk.Frame(frame, relief=tk.GROOVE, borderwidth=2, takefocus=True)
+            sub = tk.Frame(frame, relief=tk.GROOVE, borderwidth=1, takefocus=True)
             sub.grid(row=i // 2, column=i % 2, padx=10, pady=10, sticky="nsew")
 
             header = tk.Frame(sub, takefocus=True)
-            header.pack(fill="x", padx=5, pady=2)
+            header.pack(fill="x", padx=5, pady=(6, 2))
             tk.Label(
                 header,
                 text=self.i18n.t("msg_block_title", n=i + 1),
-                font=("Helvetica", 14),
+                font=("Segoe UI", 12, "bold"),
                 takefocus=True,
             ).pack(side="left")
             var_send = tk.BooleanVar(value=bool(pre.get("send", False)))
             send_vars.append(var_send)
-            tk.Checkbutton(header, text=self.i18n.t("chk_send"), variable=var_send, takefocus=True).pack(side="right")
+            tk.Checkbutton(header, text=self.i18n.t("chk_send"), variable=var_send,
+                           font=_F_SMALL, takefocus=True).pack(side="right")
 
-            tk.Label(sub, text=self.i18n.t("lbl_contact"), takefocus=True).pack(anchor="w", padx=5)
-            entry_contact = tk.Entry(sub, width=40, takefocus=True)
+            tk.Label(sub, text=self.i18n.t("lbl_contact"), font=_F_BODY,
+                     takefocus=True).pack(anchor="w", padx=5)
+            entry_contact = tk.Entry(
+                sub, width=40, takefocus=True,
+                font=_F_BODY, relief=tk.FLAT,
+                highlightthickness=1, highlightbackground="#C8CDD1",
+                highlightcolor=_C_PRIMARY,
+                insertbackground=_C_TEXT,
+            )
             entry_contact.insert(0, pre.get("contact", ""))
             entry_contact.pack(padx=5, pady=2)
             entries_contact.append(entry_contact)
 
-            tk.Label(sub, text=self.i18n.t("lbl_message"), takefocus=True).pack(anchor="w", padx=5)
-            text_message = tk.Text(sub, height=3, width=50, takefocus=True)
+            tk.Label(sub, text=self.i18n.t("lbl_message"), font=_F_BODY,
+                     takefocus=True).pack(anchor="w", padx=5)
+            text_message = tk.Text(
+                sub, height=3, width=50, takefocus=True,
+                font=_F_BODY, relief=tk.FLAT,
+                highlightthickness=1, highlightbackground="#C8CDD1",
+                highlightcolor=_C_PRIMARY,
+                insertbackground=_C_TEXT,
+                padx=4, pady=4,
+            )
             text_message.insert(tk.END, pre.get("message", ""))
             text_message.pack(padx=5, pady=2)
             entries_message.append(text_message)
 
-            tk.Label(sub, text=self.i18n.t("lbl_send_date"), takefocus=True).pack(anchor="w", padx=5)
+            tk.Label(sub, text=self.i18n.t("lbl_send_date"), font=_F_BODY,
+                     takefocus=True).pack(anchor="w", padx=5)
             date_frame = tk.Frame(sub)
             date_frame.pack(padx=5, pady=2, fill=tk.X)
             date_entry = DateEntry(date_frame, date_pattern="yyyy-mm-dd", takefocus=True)
@@ -934,13 +970,16 @@ class WhatsAppSchedulerApp:
                 date_frame,
                 text=self.i18n.t("btn_set_today"),
                 command=lambda de=date_entry: de.set_date(datetime.now()),
+                bg=_C_ACCENT, fg="#FFFFFF", font=_F_SMALL, relief=tk.FLAT,
+                activebackground=_C_PRIMARY, activeforeground="#FFFFFF",
+                cursor="hand2", padx=6, pady=2, bd=0,
             ).pack(side=tk.LEFT, padx=5)
             entries_date.append(date_entry)
 
             time_frame = tk.Frame(sub, takefocus=True)
             time_frame.pack(padx=5, pady=2, fill=tk.X)
 
-            tk.Label(time_frame, text=self.i18n.t("lbl_hour"), takefocus=True).grid(row=0, column=0, padx=5)
+            tk.Label(time_frame, text=self.i18n.t("lbl_hour"), font=_F_SMALL, takefocus=True).grid(row=0, column=0, padx=5)
             frame_hour = tk.Frame(time_frame)
             frame_hour.grid(row=1, column=0, padx=5)
             lb_hour = tk.Listbox(frame_hour, height=4, exportselection=False, selectbackground="blue", takefocus=True)
@@ -953,7 +992,7 @@ class WhatsAppSchedulerApp:
             listbox_hour.append(lb_hour)
             self._bind_listbox_keyboard(lb_hour)
 
-            tk.Label(time_frame, text=self.i18n.t("lbl_minute"), takefocus=True).grid(row=0, column=1, padx=5)
+            tk.Label(time_frame, text=self.i18n.t("lbl_minute"), font=_F_SMALL, takefocus=True).grid(row=0, column=1, padx=5)
             frame_min = tk.Frame(time_frame)
             frame_min.grid(row=1, column=1, padx=5)
             lb_min = tk.Listbox(frame_min, height=4, exportselection=False, selectbackground="blue", takefocus=True)
@@ -966,7 +1005,7 @@ class WhatsAppSchedulerApp:
             listbox_minute.append(lb_min)
             self._bind_listbox_keyboard(lb_min)
 
-            tk.Label(time_frame, text=self.i18n.t("lbl_ampm"), takefocus=True).grid(row=0, column=2, padx=5)
+            tk.Label(time_frame, text=self.i18n.t("lbl_ampm"), font=_F_SMALL, takefocus=True).grid(row=0, column=2, padx=5)
             lb_ampm = tk.Listbox(time_frame, height=2, exportselection=False, selectbackground="blue", takefocus=True)
             for ampm in ampm_options:
                 lb_ampm.insert(tk.END, ampm)
@@ -996,7 +1035,8 @@ class WhatsAppSchedulerApp:
                 except Exception:
                     pass
 
-            tk.Label(sub, text=self.i18n.t("lbl_repeat"), takefocus=True).pack(anchor="w", padx=5)
+            tk.Label(sub, text=self.i18n.t("lbl_repeat"), font=_F_BODY,
+                     takefocus=True).pack(anchor="w", padx=5)
             combo_repeat = ttk.Combobox(sub, values=repeat_display_options, state="readonly", width=15)
             # Cargar el valor canónico guardado y convertirlo a etiqueta de pantalla
             canonical_repeat = pre.get("repeat", "Ninguno")
@@ -1008,16 +1048,21 @@ class WhatsAppSchedulerApp:
                 sub,
                 text=self.i18n.t("btn_stop_repeat"),
                 command=lambda grp=group_id, idx=i, cb=combo_repeat: self.stop_repetition(grp, idx, cb),
+                bg=_C_ACCENT, fg="#FFFFFF", font=_F_SMALL, relief=tk.FLAT,
+                activebackground=_C_PRIMARY, activeforeground="#FFFFFF",
+                cursor="hand2", padx=6, pady=2, bd=0,
             ).pack(side=tk.LEFT, padx=5, pady=2)
 
-            tk.Label(sub, text=self.i18n.t("lbl_days"), takefocus=True).pack(anchor="w", padx=5)
+            tk.Label(sub, text=self.i18n.t("lbl_days"), font=_F_BODY,
+                     takefocus=True).pack(anchor="w", padx=5)
             days_frame = tk.Frame(sub)
             days_frame.pack(padx=5, pady=2, fill=tk.X)
             current_days_vars: list[tk.BooleanVar] = []
             pre_days = pre.get("days", [])
             for day_idx, day_name in enumerate(day_names):
                 var = tk.BooleanVar(value=(day_idx in pre_days))
-                tk.Checkbutton(days_frame, text=day_name, variable=var).pack(side=tk.LEFT)
+                tk.Checkbutton(days_frame, text=day_name, variable=var,
+                               font=_F_SMALL).pack(side=tk.LEFT)
                 current_days_vars.append(var)
             days_vars_all.append(current_days_vars)
             # DateEntry es lento (~1s c/u); update_idletasks mantiene el splash visible y responsive

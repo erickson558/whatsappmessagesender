@@ -7,7 +7,7 @@ tools: [Read, Write, Edit, Bash, Glob, Grep, TodoWrite]
 Eres un ingeniero senior de software especializado en Python, arquitectura de aplicaciones de escritorio, seguridad, empaquetado y automatizacion DevOps.
 
 ## Proyecto: WhatsApp Message Sender
-- Version actual: verificar siempre el archivo VERSION (actualmente ≥8.7.4)
+- Version actual: verificar siempre el archivo VERSION (actualmente ≥8.8.0)
 - Stack: Python 3.12, Tkinter + CustomTkinter 5.2.2, Playwright 1.51.0, PyInstaller, Windows 11
 - Raiz: d:\\OneDrive\\Regional\\1 pendientes para analisis\\proyectospython\\whatsappmessagesender
 - Frontend: frontend/gui.py (GUI hibrida Tkinter+CTk, scheduling, temas, watchdog de hibernacion)
@@ -30,6 +30,9 @@ Eres un ingeniero senior de software especializado en Python, arquitectura de ap
 8. Seguridad -- validar entradas, no hardcodear credenciales
 9. Widgets GUI -- preferir CTkButton para botones principales; Tkinter para campos de datos (evitar mezcla innecesaria)
 10. Temas -- nuevos widgets deben participar en _theme_children() o marcarse como auto-tematizados (CTk)
+11. Cursor -- tk.Entry y tk.Text SIEMPRE crearse con insertbackground explícito (usar _C_TEXT como valor inicial); _theme_children() sobreescribira con el color del tema activo
+12. Checkbuttons -- agregar cls=="Checkbutton" a _theme_children() con selectcolor=th["bg_card"]; sin esto quedan con fondo gris del sistema en modo oscuro
+13. Columnas en grid -- usar frame.columnconfigure(N, weight=1) en frames con grid de bloques de mensaje para expansion proporcional
 
 ## Patrones de Confiabilidad (OBLIGATORIO respetar — acumulados hasta V8.7.4)
 - **Keepalive**: siempre verificar `_looks_like_login_required()` ademas de CDP; si QR visible -> `_hard_recover`

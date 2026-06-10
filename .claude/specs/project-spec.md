@@ -1,7 +1,7 @@
 # Especificacion del Proyecto: WhatsApp Message Sender
 
 > Documento vivo de Spec-Driven Development. Actualizar con cada cambio de version mayor o menor.
-> Version del documento alineada con: `VERSION` — **v8.7.6**
+> Version del documento alineada con: `VERSION` — **v8.8.0**
 
 ---
 
@@ -26,7 +26,7 @@ Usuarios individuales o de pequenas empresas en Windows que necesitan automatiza
 
 | Campo | Valor |
 |---|---|
-| Version | **v8.7.6** |
+| Version | **v8.8.0** |
 | Rama principal | `main` |
 | Plataforma soportada | Windows 10 / 11 (x64) |
 | Python requerido (dev) | 3.12 |
@@ -70,6 +70,7 @@ Usuarios individuales o de pequenas empresas en Windows que necesitan automatiza
 - **[V8.7.2]** Fix RuntimeError en `_schedule_message`: captura `(tk.TclError, RuntimeError)` al llamar `root.after()` desde hilo de fondo. Metodo `_is_compose_visible()` nuevo para detectar chat abierto via footer contenteditable (mas fiable que header). `_wait_header` con fallback de compose.
 - **[V8.7.3]** Fix definitivo click-revert: estrategia teclado como primaria (ArrowDown+Enter), sin `blur()` previo al mouse.click (el blur ocultaba el panel de resultados antes de que el click llegara), `_is_compose_visible()` como confirmacion rapida inmediata (1200ms) en lugar de esperar 9000ms para header detection. Guard compose antes de Playwright fallback. Nuevo skill `/debug-wa-click` para diagnosticar fallas del flujo de seleccion de contacto.
 - **[V8.7.4]** Fix critico send_message: `_clear_global_search()` se llamaba ANTES de escribir el mensaje y presionaba Escape que en WA Web 2026 cierra el chat. Soluciones: (1) `_clear_global_search()` verifica `_is_compose_visible()` antes de presionar Escape; (2) la llamada dentro de `_send_message` se mueve a DESPUES del envio exitoso; (3) `_ensure_chat_target()` acepta `_is_compose_visible()` como confirmacion valida de chat abierto evitando re-seleccion innecesaria del contacto. Agente `python-desktop-engineer` y skills `diagnose-bot`/`verify-selectors` actualizados con patrones V8.7.4.
+- **[V8.8.0]** GUI overhaul de visibilidad y usabilidad: (1) cursor invisible corregido — `_theme_children()` ahora aplica `bg_card`/`text`/`insertbackground` a campos `tk.Text` (antes aplicaba colores de log); (2) `tk.Entry` y `tk.Text` de bloques de mensaje creados con `insertbackground`, `highlightthickness=1` y `highlightcolor` para cursor y foco visibles en ambos temas; (3) `Checkbutton` manejado en `_theme_children()` con `selectcolor` tematizado; (4) todos los labels de bloque usan `_F_BODY`/`_F_SMALL` (Segoe UI); (5) botones "Hoy" y "Detener repetición" estilizados con `_C_ACCENT`; (6) `frame.columnconfigure(weight=1)` para expansion proporcional de los bloques; (7) clave `"border"` en `_THEMES` para color de borde consistente entre temas.
 
 ---
 

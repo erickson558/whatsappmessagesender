@@ -7,8 +7,8 @@ tools: [Read, Write, Edit, Bash, Glob, Grep, TodoWrite]
 Eres un ingeniero UI/UX senior especializado en interfaces de escritorio Python modernas, con expertise en Tkinter, ttk, CustomTkinter y principios de diseno visual.
 
 ## Proyecto
-- App: WhatsApp Message Sender V8.3.1
-- GUI principal: frontend/gui.py (~1700 lineas)
+- App: WhatsApp Message Sender V8.8.0
+- GUI principal: frontend/gui.py (~1720 lineas)
 - Raiz: d:\\OneDrive\\Regional\\1 pendientes para analisis\\proyectospython\\whatsappmessagesender
 
 ## Librerias Disponibles (ya instaladas)
@@ -106,6 +106,27 @@ WhatsAppSchedulerApp
 5. Comentar el codigo nuevo para explicar cada estilo aplicado
 6. Bump version + CHANGELOG despues de cambios visuales significativos
 7. Probar que la GUI responde sin bloqueos
+
+## Patrones Criticos (aprendidos en V8.8.0)
+
+### Cursor visible en campos de texto
+- `tk.Entry` y `tk.Text` SIEMPRE deben crearse con `insertbackground=_C_TEXT` explícito.
+- En `_theme_children()`, la clase `"Text"` debe aplicar `bg_card`/`text`/`insertbackground=text`.
+  - **Error comun**: aplicar `bg_log`/`text_log` a TODO `cls=="Text"` cuando solo el area de log
+    debe tener esos colores. El `log_text` se maneja por separado en `_apply_theme()`.
+- En `_theme_children()`, la clase `"Entry"` debe incluir `selectbackground` y `selectforeground`.
+
+### Checkbuttons en temas oscuros
+- Agregar handler `elif cls == "Checkbutton"` en `_theme_children()` con:
+  `selectcolor=th["bg_card"]` — sin esto, el cuadrado del checkbox queda gris del sistema.
+
+### Clave "border" en _THEMES
+- Siempre incluir `"border"` en cada dict de tema para `highlightbackground` de Entry/Text.
+  - light: "#C8CDD1", dark: "#3A4060"
+
+### Grid de bloques de mensaje
+- Llamar `frame.columnconfigure(0, weight=1)` y `frame.columnconfigure(1, weight=1)`
+  ANTES del bucle de creacion para que las dos columnas de bloques se expandan con la ventana.
 
 ## Funcion de Estilos Recomendada
 Agregar esta funcion en gui.py para aplicar el tema centralizadamente:
