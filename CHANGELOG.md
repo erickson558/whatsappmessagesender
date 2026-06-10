@@ -1,5 +1,13 @@
 # Changelog
 
+## [v8.9.4] — 2026-06-10
+### Fixed
+- **Scroll con rueda del mouse:** el canvas central ahora responde a la rueda del mouse para desplazarse verticalmente y ver los mensajes inferiores. El scroll se activa solo cuando el cursor está sobre el área de mensajes para no interferir con otros controles.
+
+### Improved
+- **Tema oscuro con 3 niveles de contraste:** rediseño completo de la paleta oscura inspirado en GitHub Dark. Tres capas claramente diferenciadas: `bg_main` `#0D1117` (fondo de ventana), `bg_panel` `#161B22` (fondo de tarjetas), `bg_card` `#21262D` (campos de entrada). El texto usa `#E6EDF3` para máxima legibilidad.
+- **Cards como área propia:** `_theme_children` ahora propaga `area="card"` al entrar en una tarjeta de mensaje (`_is_card=True`), garantizando que Labels, Checkbuttons y sub-frames internos usen el color de fondo correcto de la tarjeta en lugar del fondo principal.
+
 ## [v8.9.3] — 2026-06-10
 ### Improved
 - **Selectores de hora rediseñados:** los tres `tk.Listbox` (hora, minuto, AM/PM) con scrollbar interna fueron reemplazados por `ttk.Spinbox` compactos. El selector de hora ahora ocupa una sola línea, es más claro y no muestra ítems apilados con scroll.

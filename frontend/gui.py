@@ -48,7 +48,7 @@ ctk.set_default_color_theme("green")
 
 _THEMES: dict = {
     "light": {
-        "bg_main": "#F0F2F5", "bg_card": "#FFFFFF", "bg_top": "#E6E8EB", "bg_log": "#1E2328",
+        "bg_main": "#F0F2F5", "bg_card": "#FFFFFF", "bg_panel": "#FFFFFF", "bg_top": "#E6E8EB", "bg_log": "#1E2328",
         "text": "#111B21", "text_muted": "#667781", "text_log": "#B2CFD8",
         "btn_p": "#075E54", "btn_p_h": "#25D366",
         "btn_s": "#546475", "btn_s_h": "#3D4F5C",
@@ -59,17 +59,19 @@ _THEMES: dict = {
         "badge_bg": "#C8E6C9", "badge_fg": "#1B5E20",
     },
     "dark": {
-        # Colores mejorados V8.9.2: mayor contraste entre bg_main y bg_card,
-        # bg_card más legible, bg_top diferenciado para la barra superior.
-        "bg_main": "#111827", "bg_card": "#1E2D3D", "bg_top": "#1A3A5C", "bg_log": "#0D1117",
-        "text": "#E0E0E0", "text_muted": "#A0AEC0", "text_log": "#7EE787",
-        "btn_p": "#25D366", "btn_p_h": "#128C7E",
-        "btn_s": "#4A5568", "btn_s_h": "#2D3748",
-        "btn_t": "#4299E1", "btn_t_h": "#2B6CB0",
-        "tab_bg": "#1E2D3D", "tab_fg": "#E0E0E0", "tab_sel": "#25D366", "tab_sel_fg": "#000000",
-        "clock": "#25D366", "toggle_lbl": "☀️ Claro",
-        "border": "#3A4060",
-        "badge_bg": "#1A3A28", "badge_fg": "#81C995",
+        # 3 niveles de profundidad para contraste claro en modo oscuro:
+        # bg_main  = fondo de ventana (más oscuro)
+        # bg_panel = fondo de tarjetas de mensaje (nivel medio)
+        # bg_card  = fondo de campos Entry/Text/Spinbox (más claro)
+        "bg_main": "#0D1117", "bg_card": "#21262D", "bg_panel": "#161B22", "bg_top": "#1C3A5C", "bg_log": "#010409",
+        "text": "#E6EDF3", "text_muted": "#8B949E", "text_log": "#7EE787",
+        "btn_p": "#238636", "btn_p_h": "#2EA043",
+        "btn_s": "#30363D", "btn_s_h": "#21262D",
+        "btn_t": "#1F6FEB", "btn_t_h": "#388BFD",
+        "tab_bg": "#161B22", "tab_fg": "#E6EDF3", "tab_sel": "#238636", "tab_sel_fg": "#FFFFFF",
+        "clock": "#3FB950", "toggle_lbl": "☀️ Claro",
+        "border": "#30363D",
+        "badge_bg": "#1A3A28", "badge_fg": "#3FB950",
     },
 }
 
@@ -92,7 +94,14 @@ class MessageGroupWidgets:
 
 
 def _theme_children(widget, th: dict, area: str = "main") -> None:
-    """Aplica el tema recursivamente a los hijos de un widget segun el area (main o top)."""
+    """Aplica el tema recursivamente a los hijos de un widget segun el area.
+
+    area puede ser "main", "top" o "card".
+    Cuando se entra a un frame marcado con _is_card=True el area
+    desciende a "card" para que todos sus hijos usen bg_panel en lugar
+    de bg_main, logrando 3 niveles de contraste en modo oscuro:
+      bg_main (ventana) > bg_panel (card) > bg_card (inputs).
+    """
     DONATE_COLORS = {"#f5a623", "#f5a623".upper(), "#D4891A", "#d4891a"}
     try:
         for child in widget.winfo_children():
@@ -101,15 +110,24 @@ def _theme_children(widget, th: dict, area: str = "main") -> None:
                 continue
             try:
                 cls = child.winfo_class()
-                bg = th["bg_top"] if area == "top" else th["bg_main"]
+                if area == "top":
+                    bg = th["bg_top"]
+                elif area == "card":
+                    bg = th.get("bg_panel", th["bg_main"])
+                else:
+                    bg = th["bg_main"]
+
+                child_area = area  # se hereda salvo que el hijo sea una card
+
                 if cls in ("Frame", "LabelFrame"):
                     if getattr(child, "_auto_badge", False):
                         child.configure(bg=th.get("badge_bg", "#C8E6C9"))
+                    elif getattr(child, "_is_card", False):
+                        child.configure(bg=th.get("bg_panel", th["bg_card"]))
+                        child_area = "card"
                     else:
                         child.configure(bg=bg)
                     if cls == "LabelFrame":
-                        # V8.9.2: relief=GROOVE hace visible el borde en modo oscuro;
-                        # fg del titulo del LabelFrame coincide con el color de texto del tema.
                         try:
                             child.configure(fg=th["text"], relief=tk.GROOVE)
                         except Exception:
@@ -160,7 +178,7 @@ def _theme_children(widget, th: dict, area: str = "main") -> None:
                                     selectcolor=th["bg_card"])
             except Exception:
                 pass
-            _theme_children(child, th, area)
+            _theme_children(child, th, child_area)
     except Exception:
         pass
 
@@ -201,7 +219,7 @@ class WhatsAppSchedulerApp:
         self.browser_path_var = tk.StringVar()
 
         global_cfg = self.config_store.data.get("global", {})
-        self.version = str(global_cfg.get("version", "8.9.3"))
+        self.version = str(global_cfg.get("version", "8.9.4"))
         self._active_theme: str = str(self.config_store.get_global("theme", "light"))
         # Aplicar modo de apariencia a widgets CustomTkinter antes de crearlos
         ctk.set_appearance_mode("dark" if self._active_theme == "dark" else "light")
@@ -465,6 +483,12 @@ class WhatsAppSchedulerApp:
         main_frame.bind("<Configure>", lambda event: canvas.configure(scrollregion=canvas.bbox("all")))
         # Expandir el frame interno al ancho del canvas cuando la ventana se redimensiona
         canvas.bind("<Configure>", lambda event: canvas.itemconfig(_mf_win_id, width=event.width))
+
+        # Scroll con rueda del mouse: activo solo mientras el cursor está sobre el canvas
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        canvas.bind("<Enter>", lambda e: canvas.bind_all("<MouseWheel>", _on_mousewheel))
+        canvas.bind("<Leave>", lambda e: canvas.unbind_all("<MouseWheel>"))
 
         # Barra horizontal de botones — encima del log, debajo del área central
         # Se crea ANTES del log_frame para que el orden de pack (BOTTOM) sea correcto:
@@ -964,6 +988,7 @@ class WhatsAppSchedulerApp:
             pre = pre_config[i] if pre_config and i < len(pre_config) else {}
 
             sub = tk.Frame(frame, relief=tk.GROOVE, borderwidth=1, takefocus=True)
+            sub._is_card = True  # marca para _theme_children: usa bg_panel, no bg_main
             sub.grid(row=i // 2, column=i % 2, padx=10, pady=10, sticky="nsew")
 
             # --- HEADER: título del bloque + checkbox Enviar ---
