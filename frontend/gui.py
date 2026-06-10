@@ -59,19 +59,19 @@ _THEMES: dict = {
         "badge_bg": "#C8E6C9", "badge_fg": "#1B5E20",
     },
     "dark": {
-        # 3 niveles de profundidad para contraste claro en modo oscuro:
-        # bg_main  = fondo de ventana (más oscuro)
-        # bg_panel = fondo de tarjetas de mensaje (nivel medio)
-        # bg_card  = fondo de campos Entry/Text/Spinbox (más claro)
-        "bg_main": "#0D1117", "bg_card": "#21262D", "bg_panel": "#161B22", "bg_top": "#1C3A5C", "bg_log": "#010409",
-        "text": "#E6EDF3", "text_muted": "#8B949E", "text_log": "#7EE787",
-        "btn_p": "#238636", "btn_p_h": "#2EA043",
-        "btn_s": "#30363D", "btn_s_h": "#21262D",
-        "btn_t": "#1F6FEB", "btn_t_h": "#388BFD",
-        "tab_bg": "#161B22", "tab_fg": "#E6EDF3", "tab_sel": "#238636", "tab_sel_fg": "#FFFFFF",
-        "clock": "#3FB950", "toggle_lbl": "☀️ Claro",
-        "border": "#30363D",
-        "badge_bg": "#1A3A28", "badge_fg": "#3FB950",
+        # GitHub Dark Dimmed — 3 niveles claramente diferenciados para evitar grises:
+        # bg_main  = fondo ventana (#22272E, gris azulado oscuro)
+        # bg_panel = fondo tarjetas (#2D333B, más claro y claramente distinto)
+        # bg_card  = campos Entry/Text/Spinbox (#373E47, aún más claro para inputs)
+        "bg_main": "#22272E", "bg_card": "#373E47", "bg_panel": "#2D333B", "bg_top": "#1C3A5C", "bg_log": "#1C2128",
+        "text": "#ADBAC7", "text_muted": "#768390", "text_log": "#57AB5A",
+        "btn_p": "#347D39", "btn_p_h": "#46954A",
+        "btn_s": "#444C56", "btn_s_h": "#373E47",
+        "btn_t": "#316DCA", "btn_t_h": "#4184E4",
+        "tab_bg": "#2D333B", "tab_fg": "#ADBAC7", "tab_sel": "#347D39", "tab_sel_fg": "#FFFFFF",
+        "clock": "#57AB5A", "toggle_lbl": "☀️ Claro",
+        "border": "#444C56",
+        "badge_bg": "#1B4332", "badge_fg": "#57AB5A",
     },
 }
 
@@ -123,13 +123,17 @@ def _theme_children(widget, th: dict, area: str = "main") -> None:
                     if getattr(child, "_auto_badge", False):
                         child.configure(bg=th.get("badge_bg", "#C8E6C9"))
                     elif getattr(child, "_is_card", False):
-                        child.configure(bg=th.get("bg_panel", th["bg_card"]))
+                        child.configure(bg=th.get("bg_panel", th["bg_card"]),
+                                        highlightbackground=th.get("border", "#444C56"),
+                                        highlightcolor=th.get("btn_t", "#316DCA"))
                         child_area = "card"
                     else:
                         child.configure(bg=bg)
                     if cls == "LabelFrame":
                         try:
-                            child.configure(fg=th["text"], relief=tk.GROOVE)
+                            child.configure(fg=th["text"], relief=tk.GROOVE,
+                                            highlightthickness=1,
+                                            highlightbackground=th.get("border", "#444C56"))
                         except Exception:
                             pass
                 elif cls == "Label":
@@ -219,7 +223,7 @@ class WhatsAppSchedulerApp:
         self.browser_path_var = tk.StringVar()
 
         global_cfg = self.config_store.data.get("global", {})
-        self.version = str(global_cfg.get("version", "8.9.4"))
+        self.version = str(global_cfg.get("version", "8.9.5"))
         self._active_theme: str = str(self.config_store.get_global("theme", "light"))
         # Aplicar modo de apariencia a widgets CustomTkinter antes de crearlos
         ctk.set_appearance_mode("dark" if self._active_theme == "dark" else "light")
@@ -683,20 +687,30 @@ class WhatsAppSchedulerApp:
                         troughcolor=th["bg_card"], relief="flat", arrowsize=16)
         style.map("Vertical.TScrollbar", background=[("active", th["btn_t_h"])])
         style.configure("TCombobox", fieldbackground=th["bg_card"], foreground=th["text"],
-                        background=th["bg_top"], font=_F_BODY,
-                        selectbackground=th["btn_p"], selectforeground="#FFFFFF")
+                        background=th["bg_card"], font=_F_BODY,
+                        selectbackground=th["btn_p"], selectforeground="#FFFFFF",
+                        bordercolor=th.get("border", "#C8CDD1"),
+                        lightcolor=th["bg_card"], darkcolor=th["bg_card"],
+                        arrowcolor=th["text"])
         style.map("TCombobox",
                   fieldbackground=[("readonly", th["bg_card"])],
-                  foreground=[("readonly", th["text"])])
-        # V8.9.2: Estilo para los Spinbox de hora/minuto/AM-PM — se adaptan al tema activo
+                  foreground=[("readonly", th["text"])],
+                  background=[("readonly", th["bg_card"]), ("active", th["bg_card"])],
+                  arrowcolor=[("disabled", th["text_muted"])])
         style.configure("TSpinbox",
                         fieldbackground=th["bg_card"],
                         foreground=th["text"],
-                        background=th["bg_top"],
+                        background=th["bg_card"],
                         font=_F_BODY,
                         arrowcolor=th["text"],
+                        bordercolor=th.get("border", "#C8CDD1"),
+                        lightcolor=th["bg_card"], darkcolor=th["bg_card"],
                         selectbackground=th["btn_p"],
                         selectforeground="#FFFFFF")
+        style.map("TSpinbox",
+                  background=[("active", th["bg_card"])],
+                  fieldbackground=[("disabled", th["bg_main"])],
+                  foreground=[("disabled", th["text_muted"])])
 
     # =========================================================================
     # BARRA DE MENÚS
@@ -987,7 +1001,9 @@ class WhatsAppSchedulerApp:
         for i in range(num_msgs):
             pre = pre_config[i] if pre_config and i < len(pre_config) else {}
 
-            sub = tk.Frame(frame, relief=tk.GROOVE, borderwidth=1, takefocus=True)
+            sub = tk.Frame(frame, relief=tk.FLAT, bd=0,
+                           highlightthickness=1, highlightbackground=_C_BG_TOP,
+                           takefocus=True)
             sub._is_card = True  # marca para _theme_children: usa bg_panel, no bg_main
             sub.grid(row=i // 2, column=i % 2, padx=10, pady=10, sticky="nsew")
 

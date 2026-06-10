@@ -1,5 +1,15 @@
 # Changelog
 
+## [v8.9.5] — 2026-06-10
+### Fixed
+- **Grises eliminados del modo oscuro:** raíz del problema eran los colores del sistema (gris de Windows) que se filtraban en: (a) bordes `relief=GROOVE` de tarjetas y LabelFrames, (b) botones de flechas de `Spinbox`/`Combobox` con `background=bg_top` (azul), (c) paleta oscura con colores muy similares entre sí.
+
+### Improved
+- **Paleta oscura — GitHub Dark Dimmed:** tres niveles claramente distintos: `bg_main #22272E` (ventana) / `bg_panel #2D333B` (tarjetas) / `bg_card #373E47` (campos). Texto `#ADBAC7` con contraste adecuado.
+- **Bordes de tarjetas:** cambiado de `relief=GROOVE` (usa grises del sistema) a `relief=FLAT` + `highlightthickness=1` con color `border` del tema activo.
+- **Spinbox y Combobox:** `background=bg_card` en lugar de `bg_top` para que los botones de flecha/dropdown tengan el mismo color oscuro que el campo de texto. Añadidos `lightcolor`, `darkcolor`, `bordercolor` para eliminar el borde gris del sistema.
+- **LabelFrame:** añadido `highlightthickness=1` + `highlightbackground=border` para borde coloreado coherente con el tema.
+
 ## [v8.9.4] — 2026-06-10
 ### Fixed
 - **Scroll con rueda del mouse:** el canvas central ahora responde a la rueda del mouse para desplazarse verticalmente y ver los mensajes inferiores. El scroll se activa solo cuando el cursor está sobre el área de mensajes para no interferir con otros controles.
