@@ -1,5 +1,16 @@
 # Changelog
 
+## [v8.7.8] — 2026-06-09
+### Fixed
+- Splash screen congelado en 30%: `tkcalendar.DateEntry` tardaba ~1s por widget; con 16 bloques de mensaje (4 grupos × 4 mensajes) el splash quedaba bloqueado sin respuesta durante 15-120 segundos según la velocidad del sistema. Fix: se pasa callback `splash_step` a `_build_ui()` para actualizar el progreso en 30%, 38%, 46%, 54% al terminar cada grupo; y se agrega `root.update_idletasks()` dentro del bucle de `_create_message_blocks()` para que el splash permanezca visible y responsive mientras se crean los DateEntry.
+- `RequestsDependencyWarning` de `requests`: `chardet 6.0.0.post1` no es reconocido por `requests 2.32.3` (solo soporta chardet 3.x/4.x). El warning era inofensivo pero confuso. Fix: suprimido en `enviar_whatsapp.py` via `warnings.filterwarnings` antes de que se importen los módulos.
+
+## [v8.7.7] — 2026-06-09
+### Fixed
+- Bug crítico: `_advance_to_next_occurrence` tenía un `+1` fijo en todos los modos de repetición que causaba que al reiniciar la app con mensajes en fecha pasada, se saltara un ciclo adicional innecesario. Impacto: mensajes "Diariamente" se programaban para el día siguiente en lugar de hoy si la app arrancaba antes de la hora configurada; mensajes "Cada hora" y "Cada minuto" perdían un turno extra después de reinicios. Fix: eliminado el `+1` incondicional; ahora se calcula el mínimo de intervalos con `ceil()` y se avanza un intervalo extra solo si el resultado sigue siendo ≤ reference.
+- `_report_callback_exception`: las excepciones en callbacks de Tkinter solo se imprimían a stderr (invisibles en producción). Ahora también se escriben al log de aplicación (`logaplicacion*.txt`) para facilitar diagnóstico post-crash.
+- `_on_exit_requested`: al cerrar la app no quedaba registro en el log. Ahora registra `[APP] Cierre solicitado por el usuario.` para distinguir cierres normales de crashes silenciosos en logs históricos.
+
 ## [v8.7.6] — 2026-06-06
 ### Fixed
 - CI: workflow Release fallaba en "Ensure tag does not exist yet" por dos causas: (1) `git fetch --tags --force` generaba archivos `.lock` stale en runner Windows (filesystem case-insensitive); reemplazado por `git ls-remote` que consulta el remoto sin writes locales. (2) `fetch-depth: 0` en el checkout descargaba todos los tags y también causaba lock conflicts; simplificado a checkout estándar sin fetch de historial completo.

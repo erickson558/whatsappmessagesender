@@ -164,7 +164,7 @@ class WhatsAppSchedulerApp:
         self.browser_path_var = tk.StringVar()
 
         global_cfg = self.config_store.data.get("global", {})
-        self.version = str(global_cfg.get("version", "8.2.1"))
+        self.version = str(global_cfg.get("version", "8.7.8"))
         self._active_theme: str = str(self.config_store.get_global("theme", "light"))
         # Aplicar modo de apariencia a widgets CustomTkinter antes de crearlos
         ctk.set_appearance_mode("dark" if self._active_theme == "dark" else "light")
@@ -181,10 +181,10 @@ class WhatsAppSchedulerApp:
         self._set_window_geometry()
         self.root.minsize(1000, 800)
         self.groups: dict[int, MessageGroupWidgets] = {}
-        _step(30, self.i18n.t("splash_building"))
 
         # --- Paso 5: construir todos los widgets de la UI ---
-        self._build_ui()
+        # _step se pasa para actualizar el splash por grupo (los DateEntry son lentos: ~1s c/u)
+        self._build_ui(splash_step=_step)
         self.root.protocol("WM_DELETE_WINDOW", lambda: self.root.event_generate("<<ExitRequested>>"))
         self.logger.set_ui_callback(self._append_log_line)
         _step(65, self.i18n.t("splash_engine"))
@@ -279,6 +279,14 @@ class WhatsAppSchedulerApp:
         if self.app_quitting:
             return
         import traceback
+        import io
+        buf = io.StringIO()
+        traceback.print_exception(exc, value, tb, file=buf)
+        tb_str = buf.getvalue()
+        try:
+            self.log_message(f"[ERROR] Excepcion en callback de Tkinter:\n{tb_str.strip()}")
+        except Exception:
+            pass
         traceback.print_exception(exc, value, tb)
 
     def _set_window_geometry(self) -> None:
@@ -361,7 +369,7 @@ class WhatsAppSchedulerApp:
             browser_extra_args=browser_extra_args,
         )
 
-    def _build_ui(self) -> None:
+    def _build_ui(self, splash_step=None) -> None:
         # Construir la barra de menús antes de cualquier otro widget
         self._build_menubar()
         # Aplicar fondo del tema a la ventana principal
@@ -446,7 +454,11 @@ class WhatsAppSchedulerApp:
         notebook.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
         self._main_notebook = notebook
 
+        # Rango 30-62 se distribuye en 4 grupos; el splash_step permite ver avance
+        # mientras tkcalendar.DateEntry se crea (~1s por widget en algunos sistemas).
         for group_id in range(1, 5):
+            if splash_step:
+                splash_step(30 + (group_id - 1) * 8, self.i18n.t("splash_building"))
             # Cada pestaña con fondo del tema
             frame = tk.Frame(notebook, bg=_C_BG_MAIN)
             notebook.add(frame, text=self.i18n.t("group_tab", n=group_id))
@@ -1008,6 +1020,11 @@ class WhatsAppSchedulerApp:
                 tk.Checkbutton(days_frame, text=day_name, variable=var).pack(side=tk.LEFT)
                 current_days_vars.append(var)
             days_vars_all.append(current_days_vars)
+            # DateEntry es lento (~1s c/u); update_idletasks mantiene el splash visible y responsive
+            try:
+                self.root.update_idletasks()
+            except Exception:
+                pass
 
         return MessageGroupWidgets(
             entries_contact=entries_contact,
@@ -1045,8 +1062,16 @@ class WhatsAppSchedulerApp:
     @staticmethod
     def _advance_to_next_occurrence(dt: datetime, repeat: str, reference: datetime) -> datetime:
         """
-        Dado un datetime 'dt' en el pasado, lo avanza al primer momento futuro
-        segun el modo de repeticion indicado (valores canonicos en espanol).
+        Dado un datetime 'dt' en el pasado, lo avanza al PRIMER momento estrictamente
+        futuro segun el modo de repeticion indicado (valores canonicos en espanol).
+
+        FIX V8.7.7: eliminado el '+1' fijo en todos los modos. El patron correcto es:
+        calcular el minimo de intervalos necesarios para superar 'reference' (ceil),
+        y luego avanzar un intervalo mas SOLO si el resultado es <= reference.
+        Antes, el '+1' incondicional hacia que al reiniciar la app justo despues de
+        una ocurrencia (ej. 1 minuto tras el disparo), se saltara un ciclo completo
+        extra: los mensajes 'Diariamente' se programaban para el dia siguiente en
+        lugar de hoy, y los 'Cada hora' perdian un turno adicional.
         """
         from math import ceil
 
@@ -1055,22 +1080,34 @@ class WhatsAppSchedulerApp:
 
         if repeat == "Cada minuto":
             diff_sec = (reference - dt).total_seconds()
-            minutes_needed = int(ceil(diff_sec / 60)) + 1
-            return dt + timedelta(minutes=minutes_needed)
+            minutes_needed = int(ceil(diff_sec / 60))
+            next_dt = dt + timedelta(minutes=minutes_needed)
+            if next_dt <= reference:
+                next_dt += timedelta(minutes=1)
+            return next_dt
 
         elif repeat == "Cada hora":
             diff_sec = (reference - dt).total_seconds()
-            hours_needed = int(ceil(diff_sec / 3600)) + 1
-            return dt + timedelta(hours=hours_needed)
+            hours_needed = int(ceil(diff_sec / 3600))
+            next_dt = dt + timedelta(hours=hours_needed)
+            if next_dt <= reference:
+                next_dt += timedelta(hours=1)
+            return next_dt
 
         elif repeat == "Diariamente":
-            diff_days = (reference.date() - dt.date()).days + 1
-            return dt + timedelta(days=diff_days)
+            diff_days = (reference.date() - dt.date()).days
+            next_dt = dt + timedelta(days=diff_days)
+            if next_dt <= reference:
+                next_dt += timedelta(days=1)
+            return next_dt
 
         elif repeat == "Semanalmente":
-            diff_days = (reference.date() - dt.date()).days + 1
-            weeks_needed = int(ceil(diff_days / 7))
-            return dt + timedelta(weeks=max(1, weeks_needed))
+            diff_days = (reference.date() - dt.date()).days
+            weeks_needed = int(ceil(diff_days / 7)) if diff_days > 0 else 0
+            next_dt = dt + timedelta(weeks=max(1, weeks_needed))
+            if next_dt <= reference:
+                next_dt += timedelta(weeks=1)
+            return next_dt
 
         elif repeat == "Mensualmente":
             result = dt
@@ -1595,6 +1632,10 @@ class WhatsAppSchedulerApp:
         if self.app_quitting:
             return
         self.app_quitting = True
+        try:
+            self.log_message("[APP] Cierre solicitado por el usuario.")
+        except Exception:
+            pass
 
         try:
             if self.clock_after_id is not None:
