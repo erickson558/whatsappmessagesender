@@ -56,6 +56,7 @@ _THEMES: dict = {
         "tab_bg": "#FFFFFF", "tab_fg": "#111B21", "tab_sel": "#075E54", "tab_sel_fg": "#FFFFFF",
         "clock": "#075E54", "toggle_lbl": "\U0001f319 Oscuro",
         "border": "#C8CDD1",
+        "badge_bg": "#C8E6C9", "badge_fg": "#1B5E20",
     },
     "dark": {
         "bg_main": "#1A1A2E", "bg_card": "#16213E", "bg_top": "#0F3460", "bg_log": "#0D1117",
@@ -66,6 +67,7 @@ _THEMES: dict = {
         "tab_bg": "#16213E", "tab_fg": "#E0E0E0", "tab_sel": "#25D366", "tab_sel_fg": "#000000",
         "clock": "#25D366", "toggle_lbl": "☀️ Claro",
         "border": "#3A4060",
+        "badge_bg": "#1A3A28", "badge_fg": "#81C995",
     },
 }
 
@@ -82,6 +84,7 @@ class MessageGroupWidgets:
     repeat_vars: list[ttk.Combobox]
     days_vars: list[list[tk.BooleanVar]]
     auto_label_vars: list[tk.BooleanVar]
+    auto_label_text_vars: list[tk.StringVar]
 
 
 def _theme_children(widget, th: dict, area: str = "main") -> None:
@@ -96,9 +99,21 @@ def _theme_children(widget, th: dict, area: str = "main") -> None:
                 cls = child.winfo_class()
                 bg = th["bg_top"] if area == "top" else th["bg_main"]
                 if cls in ("Frame", "LabelFrame"):
-                    child.configure(bg=bg)
+                    if getattr(child, "_auto_badge", False):
+                        child.configure(bg=th.get("badge_bg", "#C8E6C9"))
+                    else:
+                        child.configure(bg=bg)
+                    if cls == "LabelFrame":
+                        try:
+                            child.configure(fg=th["text"])
+                        except Exception:
+                            pass
                 elif cls == "Label":
-                    child.configure(bg=bg, fg=th["text"])
+                    if getattr(child, "_auto_badge_label", False):
+                        badge_bg = th.get("badge_bg", "#C8E6C9")
+                        child.configure(bg=badge_bg, fg=th.get("badge_fg", "#1B5E20"))
+                    else:
+                        child.configure(bg=bg, fg=th["text"])
                 elif cls == "Button":
                     try:
                         cbg = child.cget("bg")
@@ -180,7 +195,7 @@ class WhatsAppSchedulerApp:
         self.browser_path_var = tk.StringVar()
 
         global_cfg = self.config_store.data.get("global", {})
-        self.version = str(global_cfg.get("version", "8.7.8"))
+        self.version = str(global_cfg.get("version", "8.9.0"))
         self._active_theme: str = str(self.config_store.get_global("theme", "light"))
         # Aplicar modo de apariencia a widgets CustomTkinter antes de crearlos
         ctk.set_appearance_mode("dark" if self._active_theme == "dark" else "light")
@@ -434,7 +449,7 @@ class WhatsAppSchedulerApp:
         # Canvas sin borde visible y fondo del tema
         canvas = tk.Canvas(mid, bg=_C_BG_MAIN, highlightthickness=0)
         canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        vscroll = tk.Scrollbar(mid, orient=tk.VERTICAL, command=canvas.yview)
+        vscroll = tk.Scrollbar(mid, orient=tk.VERTICAL, command=canvas.yview, width=18)
         vscroll.pack(side=tk.RIGHT, fill=tk.Y)
         canvas.configure(yscrollcommand=vscroll.set)
 
@@ -461,7 +476,7 @@ class WhatsAppSchedulerApp:
             selectforeground="#FFFFFF",
         )
         self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        log_scroll = tk.Scrollbar(log_frame, orient=tk.VERTICAL, command=self.log_text.yview)
+        log_scroll = tk.Scrollbar(log_frame, orient=tk.VERTICAL, command=self.log_text.yview, width=18)
         self.log_text.configure(yscrollcommand=log_scroll.set)
         log_scroll.pack(side=tk.RIGHT, fill=tk.Y)
 
@@ -618,8 +633,12 @@ class WhatsAppSchedulerApp:
                   background=[("selected", th["tab_sel"]), ("active", th["btn_t"])],
                   foreground=[("selected", th["tab_sel_fg"]), ("active", "#FFFFFF")])
         style.configure("TScrollbar", background=th["bg_main"],
-                        troughcolor=th["bg_card"], relief="flat", arrowsize=13)
+                        troughcolor=th["bg_card"], relief="flat", arrowsize=16)
         style.map("TScrollbar", background=[("active", th["btn_t"])])
+        # Estilo especifico para scrollbar vertical — mas grueso y con color de acento
+        style.configure("Vertical.TScrollbar", background=th["btn_t"],
+                        troughcolor=th["bg_card"], relief="flat", arrowsize=16)
+        style.map("Vertical.TScrollbar", background=[("active", th["btn_t_h"])])
         style.configure("TCombobox", fieldbackground=th["bg_card"], foreground=th["text"],
                         background=th["bg_top"], font=_F_BODY,
                         selectbackground=th["btn_p"], selectforeground="#FFFFFF")
@@ -900,6 +919,7 @@ class WhatsAppSchedulerApp:
         repeat_vars: list[ttk.Combobox] = []
         days_vars_all: list[list[tk.BooleanVar]] = []
         auto_label_vars: list[tk.BooleanVar] = []
+        auto_label_text_vars: list[tk.StringVar] = []
 
         hours = [str(i) for i in range(1, 13)]
         minutes = [f"{i:02d}" for i in range(60)]
@@ -917,6 +937,7 @@ class WhatsAppSchedulerApp:
             sub = tk.Frame(frame, relief=tk.GROOVE, borderwidth=1, takefocus=True)
             sub.grid(row=i // 2, column=i % 2, padx=10, pady=10, sticky="nsew")
 
+            # --- HEADER: título del bloque + checkbox Enviar ---
             header = tk.Frame(sub, takefocus=True)
             header.pack(fill="x", padx=5, pady=(6, 2))
             tk.Label(
@@ -930,6 +951,7 @@ class WhatsAppSchedulerApp:
             tk.Checkbutton(header, text=self.i18n.t("chk_send"), variable=var_send,
                            font=_F_SMALL, takefocus=True).pack(side="right")
 
+            # --- CONTACTO ---
             tk.Label(sub, text=self.i18n.t("lbl_contact"), font=_F_BODY,
                      takefocus=True).pack(anchor="w", padx=5)
             entry_contact = tk.Entry(
@@ -943,8 +965,22 @@ class WhatsAppSchedulerApp:
             entry_contact.pack(padx=5, pady=2)
             entries_contact.append(entry_contact)
 
+            # --- MENSAJE: campo de texto + badge de prefijo automático + fila de toggle ---
             tk.Label(sub, text=self.i18n.t("lbl_message"), font=_F_BODY,
                      takefocus=True).pack(anchor="w", padx=5)
+
+            # Badge verde que muestra el texto prefijo cuando el toggle está activo.
+            # Se muestra/oculta con pack/pack_forget según el estado del checkbox.
+            badge_frame = tk.Frame(sub, bg="#C8E6C9", relief=tk.FLAT)
+            badge_frame._auto_badge = True  # marca para _theme_children
+            badge_inner = tk.Label(
+                badge_frame, bg="#C8E6C9", fg="#1B5E20",
+                font=_F_SMALL, anchor="w", padx=6, pady=2,
+            )
+            badge_inner._auto_badge_label = True  # marca para _theme_children
+            badge_inner.pack(fill="x")
+            # badge_frame NO se hace pack aquí; se controla con _on_auto_toggle
+
             text_message = tk.Text(
                 sub, height=3, width=50, takefocus=True,
                 font=_F_BODY, relief=tk.FLAT,
@@ -954,31 +990,84 @@ class WhatsAppSchedulerApp:
                 padx=4, pady=4,
             )
             text_message.insert(tk.END, pre.get("message", ""))
-            text_message.pack(padx=5, pady=2)
+            text_message.pack(padx=5, pady=(0, 2))
             entries_message.append(text_message)
 
+            # Fila de control del prefijo automático: checkbox + Entry editable
             var_auto_label = tk.BooleanVar(value=bool(pre.get("auto_label", False)))
             auto_label_vars.append(var_auto_label)
+
+            auto_row = tk.Frame(sub)
+            auto_row.pack(anchor="w", padx=5, pady=(0, 4), fill=tk.X)
             tk.Checkbutton(
-                sub,
-                text="Agregar [Mensaje Programado Automáticamente]",
+                auto_row,
+                text="Prefijo automático:",
                 variable=var_auto_label,
                 font=_F_SMALL, takefocus=True,
-            ).pack(anchor="w", padx=5, pady=(0, 4))
+            ).pack(side="left")
 
-            tk.Label(sub, text=self.i18n.t("lbl_send_date"), font=_F_BODY,
-                     takefocus=True).pack(anchor="w", padx=5)
-            date_frame = tk.Frame(sub)
-            date_frame.pack(padx=5, pady=2, fill=tk.X)
-            date_entry = DateEntry(date_frame, date_pattern="yyyy-mm-dd", takefocus=True)
+            # StringVar con el texto personalizable del prefijo; se carga desde config
+            auto_label_text_var = tk.StringVar(
+                value=pre.get("auto_label_text", "[Mensaje Programado Automáticamente]")
+            )
+            auto_label_text_vars.append(auto_label_text_var)
+
+            auto_text_entry = tk.Entry(
+                auto_row,
+                textvariable=auto_label_text_var,
+                font=_F_SMALL,
+                relief=tk.FLAT,
+                highlightthickness=1,
+                highlightbackground="#C8CDD1",
+                highlightcolor=_C_PRIMARY,
+                insertbackground=_C_TEXT,
+            )
+            auto_text_entry.pack(side="left", fill="x", expand=True, padx=(4, 0))
+
+            # Actualiza el texto del badge cuando cambia el StringVar del prefijo
+            def _update_badge(_badge=badge_inner, _tv=auto_label_text_var):
+                _badge.config(text=f"+ {_tv.get()}")
+
+            auto_label_text_var.trace_add("write", lambda *a, fn=_update_badge: fn())
+            _update_badge()
+
+            # Muestra/oculta el badge y habilita/deshabilita el Entry al cambiar el checkbox
+            def _on_auto_toggle(
+                _v=var_auto_label,
+                _bf=badge_frame,
+                _tm=text_message,
+                _ae=auto_text_entry,
+            ):
+                if _v.get():
+                    _bf.pack(before=_tm, fill="x", padx=5, pady=(0, 1))
+                    _ae.configure(state=tk.NORMAL)
+                else:
+                    _bf.pack_forget()
+                    _ae.configure(state=tk.DISABLED)
+
+            var_auto_label.trace_add("write", lambda *a, fn=_on_auto_toggle: fn())
+            _on_auto_toggle()
+
+            # --- SECCIÓN PROGRAMACIÓN (LabelFrame con fecha y hora) ---
+            sched_frame = tk.LabelFrame(
+                sub, text=" \U0001f4c5 Programación ",
+                font=_F_SMALL, padx=5, pady=4,
+            )
+            sched_frame.pack(fill="x", padx=5, pady=(4, 2))
+
+            # Fila de fecha
+            date_row = tk.Frame(sched_frame)
+            date_row.pack(fill="x", pady=(2, 0))
+            tk.Label(date_row, text="Fecha:", font=_F_SMALL).pack(side=tk.LEFT)
+            date_entry = DateEntry(date_row, date_pattern="yyyy-mm-dd", takefocus=True)
             safe_date = self._safe_date_value(pre.get("date"))
             try:
                 date_entry.set_date(safe_date)
             except Exception:
                 date_entry.set_date(datetime.now())
-            date_entry.pack(side=tk.LEFT)
+            date_entry.pack(side=tk.LEFT, padx=(4, 0))
             tk.Button(
-                date_frame,
+                date_row,
                 text=self.i18n.t("btn_set_today"),
                 command=lambda de=date_entry: de.set_date(datetime.now()),
                 bg=_C_ACCENT, fg="#FFFFFF", font=_F_SMALL, relief=tk.FLAT,
@@ -987,43 +1076,54 @@ class WhatsAppSchedulerApp:
             ).pack(side=tk.LEFT, padx=5)
             entries_date.append(date_entry)
 
-            time_frame = tk.Frame(sub, takefocus=True)
-            time_frame.pack(padx=5, pady=2, fill=tk.X)
+            # Fila de hora (listboxes hora + minuto + AM/PM con scrollbars internos)
+            time_row = tk.Frame(sched_frame)
+            time_row.pack(fill="x", pady=(4, 2))
+            tk.Label(time_row, text="Hora:", font=_F_SMALL).pack(side=tk.LEFT)
 
-            tk.Label(time_frame, text=self.i18n.t("lbl_hour"), font=_F_SMALL, takefocus=True).grid(row=0, column=0, padx=5)
-            frame_hour = tk.Frame(time_frame)
-            frame_hour.grid(row=1, column=0, padx=5)
-            lb_hour = tk.Listbox(frame_hour, height=4, exportselection=False, selectbackground="blue", takefocus=True)
+            frame_hour = tk.Frame(time_row)
+            frame_hour.pack(side=tk.LEFT, padx=(4, 0))
+            lb_hour = tk.Listbox(
+                frame_hour, height=3, width=4,
+                exportselection=False, selectbackground="blue", takefocus=True,
+            )
             for hour in hours:
                 lb_hour.insert(tk.END, hour)
             lb_hour.pack(side="left", fill="y")
-            sb_hour = tk.Scrollbar(frame_hour, orient="vertical", command=lb_hour.yview)
+            sb_hour = tk.Scrollbar(frame_hour, orient="vertical", command=lb_hour.yview, width=10)
             lb_hour.configure(yscrollcommand=sb_hour.set)
             sb_hour.pack(side="right", fill="y")
             listbox_hour.append(lb_hour)
             self._bind_listbox_keyboard(lb_hour)
 
-            tk.Label(time_frame, text=self.i18n.t("lbl_minute"), font=_F_SMALL, takefocus=True).grid(row=0, column=1, padx=5)
-            frame_min = tk.Frame(time_frame)
-            frame_min.grid(row=1, column=1, padx=5)
-            lb_min = tk.Listbox(frame_min, height=4, exportselection=False, selectbackground="blue", takefocus=True)
+            tk.Label(time_row, text=":", font=("Segoe UI", 12, "bold")).pack(side=tk.LEFT, padx=2)
+
+            frame_min = tk.Frame(time_row)
+            frame_min.pack(side=tk.LEFT)
+            lb_min = tk.Listbox(
+                frame_min, height=3, width=4,
+                exportselection=False, selectbackground="blue", takefocus=True,
+            )
             for minute in minutes:
                 lb_min.insert(tk.END, minute)
             lb_min.pack(side="left", fill="y")
-            sb_min = tk.Scrollbar(frame_min, orient="vertical", command=lb_min.yview)
+            sb_min = tk.Scrollbar(frame_min, orient="vertical", command=lb_min.yview, width=10)
             lb_min.configure(yscrollcommand=sb_min.set)
             sb_min.pack(side="right", fill="y")
             listbox_minute.append(lb_min)
             self._bind_listbox_keyboard(lb_min)
 
-            tk.Label(time_frame, text=self.i18n.t("lbl_ampm"), font=_F_SMALL, takefocus=True).grid(row=0, column=2, padx=5)
-            lb_ampm = tk.Listbox(time_frame, height=2, exportselection=False, selectbackground="blue", takefocus=True)
+            lb_ampm = tk.Listbox(
+                time_row, height=2, width=5,
+                exportselection=False, selectbackground="blue", takefocus=True,
+            )
             for ampm in ampm_options:
                 lb_ampm.insert(tk.END, ampm)
-            lb_ampm.grid(row=1, column=2, padx=5)
+            lb_ampm.pack(side=tk.LEFT, padx=4)
             listbox_ampm.append(lb_ampm)
             self._bind_listbox_keyboard(lb_ampm)
 
+            # Preseleccionar valores guardados en los listboxes
             if pre.get("hour", ""):
                 try:
                     idx_hour = hours.index(str(pre["hour"]))
@@ -1046,36 +1146,44 @@ class WhatsAppSchedulerApp:
                 except Exception:
                     pass
 
-            tk.Label(sub, text=self.i18n.t("lbl_repeat"), font=_F_BODY,
-                     takefocus=True).pack(anchor="w", padx=5)
-            combo_repeat = ttk.Combobox(sub, values=repeat_display_options, state="readonly", width=15)
+            # --- SECCIÓN REPETICIÓN (LabelFrame con combobox + días) ---
+            repeat_lf = tk.LabelFrame(
+                sub, text=" \U0001f504 Repetición ",
+                font=_F_SMALL, padx=5, pady=4,
+            )
+            repeat_lf.pack(fill="x", padx=5, pady=(2, 6))
+
+            # Fila del combobox de repetición + botón Detener
+            repeat_row = tk.Frame(repeat_lf)
+            repeat_row.pack(fill="x")
+            combo_repeat = ttk.Combobox(repeat_row, values=repeat_display_options, state="readonly", width=15)
             # Cargar el valor canónico guardado y convertirlo a etiqueta de pantalla
             canonical_repeat = pre.get("repeat", "Ninguno")
             combo_repeat.set(self.i18n.canonical_to_display(canonical_repeat))
-            combo_repeat.pack(side=tk.LEFT, padx=5, pady=2)
+            combo_repeat.pack(side=tk.LEFT)
             repeat_vars.append(combo_repeat)
-
             tk.Button(
-                sub,
+                repeat_row,
                 text=self.i18n.t("btn_stop_repeat"),
                 command=lambda grp=group_id, idx=i, cb=combo_repeat: self.stop_repetition(grp, idx, cb),
                 bg=_C_ACCENT, fg="#FFFFFF", font=_F_SMALL, relief=tk.FLAT,
                 activebackground=_C_PRIMARY, activeforeground="#FFFFFF",
                 cursor="hand2", padx=6, pady=2, bd=0,
-            ).pack(side=tk.LEFT, padx=5, pady=2)
+            ).pack(side=tk.LEFT, padx=5)
 
-            tk.Label(sub, text=self.i18n.t("lbl_days"), font=_F_BODY,
-                     takefocus=True).pack(anchor="w", padx=5)
-            days_frame = tk.Frame(sub)
-            days_frame.pack(padx=5, pady=2, fill=tk.X)
+            # Fila de checkbuttons de días de la semana
+            days_row = tk.Frame(repeat_lf)
+            days_row.pack(fill="x", pady=(4, 0))
+            tk.Label(days_row, text="Días:", font=_F_SMALL).pack(side=tk.LEFT)
             current_days_vars: list[tk.BooleanVar] = []
             pre_days = pre.get("days", [])
             for day_idx, day_name in enumerate(day_names):
                 var = tk.BooleanVar(value=(day_idx in pre_days))
-                tk.Checkbutton(days_frame, text=day_name, variable=var,
+                tk.Checkbutton(days_row, text=day_name, variable=var,
                                font=_F_SMALL).pack(side=tk.LEFT)
                 current_days_vars.append(var)
             days_vars_all.append(current_days_vars)
+
             # DateEntry es lento (~1s c/u); update_idletasks mantiene el splash visible y responsive
             try:
                 self.root.update_idletasks()
@@ -1093,6 +1201,7 @@ class WhatsAppSchedulerApp:
             repeat_vars=repeat_vars,
             days_vars=days_vars_all,
             auto_label_vars=auto_label_vars,
+            auto_label_text_vars=auto_label_text_vars,
         )
 
     def stop_repetition(self, group: int, index: int, combobox: ttk.Combobox) -> None:
@@ -1239,7 +1348,9 @@ class WhatsAppSchedulerApp:
             contact = widgets.entries_contact[idx].get().strip()
             message_text = widgets.entries_message[idx].get("1.0", tk.END).strip()
             if widgets.auto_label_vars[idx].get():
-                message_text = "[Mensaje Programado Automáticamente] " + message_text
+                auto_txt = widgets.auto_label_text_vars[idx].get().strip()
+                prefix = auto_txt if auto_txt else "[Mensaje Programado Automáticamente]"
+                message_text = prefix + " " + message_text
             if not contact or not message_text:
                 continue
 
@@ -1545,6 +1656,7 @@ class WhatsAppSchedulerApp:
                         "send": bool(widgets.send_vars[idx].get()),
                         "days": days_selected,
                         "auto_label": bool(widgets.auto_label_vars[idx].get()),
+                        "auto_label_text": widgets.auto_label_text_vars[idx].get(),
                     }
                 )
             self.config_store.set_group_messages(group_id, payload)
