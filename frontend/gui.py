@@ -481,6 +481,7 @@ class WhatsAppSchedulerApp:
         # Canvas sin borde visible y fondo del tema
         canvas = tk.Canvas(mid, bg=_C_BG_MAIN, highlightthickness=0)
         canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self._canvas = canvas
         vscroll = tk.Scrollbar(mid, orient=tk.VERTICAL, command=canvas.yview, width=18)
         vscroll.pack(side=tk.RIGHT, fill=tk.Y)
         canvas.configure(yscrollcommand=vscroll.set)
@@ -1056,7 +1057,7 @@ class WhatsAppSchedulerApp:
             # badge_frame NO se hace pack aquí; se controla con _on_auto_toggle
 
             text_message = tk.Text(
-                sub, height=2, width=50, takefocus=True,  # V8.9.2: height 3→2 para layout mas compacto
+                sub, height=4, width=50, takefocus=True,
                 font=_F_BODY, relief=tk.FLAT,
                 highlightthickness=1, highlightbackground="#C8CDD1",
                 highlightcolor=_C_PRIMARY,
@@ -1065,6 +1066,22 @@ class WhatsAppSchedulerApp:
             )
             text_message.insert(tk.END, pre.get("message", ""))
             text_message.pack(fill=tk.X, padx=5, pady=(0, 2))
+
+            def _scroll_into_view(event, _c=self._canvas, _w=text_message):
+                _c.update_idletasks()
+                bbox = _c.bbox("all")
+                if not bbox or bbox[3] <= 0:
+                    return
+                total_h = bbox[3]
+                w_top = _c.canvasy(_w.winfo_rooty() - _c.winfo_rooty())
+                w_bot = w_top + _w.winfo_height()
+                view_top = _c.canvasy(0)
+                view_bot = _c.canvasy(_c.winfo_height())
+                if w_top < view_top or w_bot > view_bot:
+                    target = max(0.0, min((w_top - _c.winfo_height() * 0.2) / total_h, 1.0))
+                    _c.yview_moveto(target)
+
+            text_message.bind("<FocusIn>", _scroll_into_view)
             entries_message.append(text_message)
 
             # Fila de control del prefijo automático: checkbox + Entry editable

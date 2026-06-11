@@ -1,5 +1,10 @@
 # Changelog
 
+## [v8.9.7] — 2026-06-10
+### Fixed
+- **Campo de mensaje más grande:** aumentado `height=2` → `height=4` en los `tk.Text` de mensaje para mejor usabilidad y espacio de escritura.
+- **Scroll automático al hacer focus:** al hacer clic en el campo de mensaje, el canvas principal ahora se desplaza automáticamente para mostrar el widget en pantalla. Se agregó binding `<FocusIn>` que calcula la posición del widget en el canvas y ejecuta `yview_moveto` cuando está fuera del área visible.
+
 ## [v8.9.6] — 2026-06-10
 ### Fixed
 - **LabelFrame títulos con fondo incorrecto:** en Windows, el área de texto del título de `tk.LabelFrame` ignora el `bg` configurado y usa colores del sistema (blanco/gris), rompiendo el tema oscuro. Solución: los dos LabelFrame de "Programación" y "Repetición" fueron reemplazados por `tk.Frame` + `tk.Label` de título propio, que `_theme_children` puede controlar completamente. El borde visible se mantiene via `highlightthickness=1` con color `border` del tema activo.
