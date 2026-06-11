@@ -1,5 +1,10 @@
 # Changelog
 
+## [v8.9.9] — 2026-06-11
+### Fixed
+- **Selección de contacto — overlay WA Web 2026:** en versiones recientes de WhatsApp Web 2026, el panel de búsqueda puede permanecer activo como overlay sobre el chat recién abierto, ocultando el compositor y haciendo que `_is_compose_visible()` devuelva False aunque el chat ya estuviera abierto. Se agrega un paso `Escape` post-Strategy1 en `_select_contact` para descartar el overlay y re-verificar compose/header antes de continuar con estrategias más invasivas. Si no había chat abierto, Escape cierra el panel y Strategy 2 opera directamente sobre la lista de chats recientes.
+- **`_wait_header` — detección 1-pass:** cambiada la lógica de 2 checks consecutivos de compose a 1 solo check (`compose_seen` removido). La lógica de 2-pass era demasiado estricta en WA Web 2026 donde el compositor puede quedar brevemente oculto entre ciclos de 140 ms, causando falsos negativos.
+
 ## [v8.9.8] — 2026-06-10
 ### Fixed
 - **Scrollbar en campo de mensaje:** cada `tk.Text` de mensaje ahora tiene su propia scrollbar vertical. El campo se envuelve en un Frame contenedor (`_is_section=True`) con la scrollbar a la derecha; el borde visible es del Frame, no del Text.

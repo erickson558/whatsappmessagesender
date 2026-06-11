@@ -1517,18 +1517,16 @@ class BrowserWorker(threading.Thread):
         Si los selectores del header no pueden leer el nombre (WA Web actualizo su estructura),
         acepta el chat como correcto si el compose box es visible: es mejor enviar el mensaje
         que regresar al modo busqueda, que cierra el chat definitivamente.
+        V8.9.9: deteccion de compose en 1-pass (antes 2-pass) para mayor velocidad en WA Web 2026.
         """
         end_time = time.time() + (timeout_ms / 1000.0)
-        compose_seen = False
         while time.time() < end_time:
             if self._is_in_chat(contact):
                 return True
-            # Si el compose box ya es visible pero el header no responde (selector obsoleto),
-            # esperar un ciclo mas para dar tiempo al header y luego aceptar el chat.
-            if not compose_seen and self._is_compose_visible():
-                compose_seen = True
-            elif compose_seen and self._is_compose_visible():
-                self.log(f"[WAIT-HEADER] Compose visible pero header sin confirmar nombre. Aceptando chat.")
+            # V8.9.9: compose visible => chat abierto. Sin 2-pass para capturar apertura
+            # en WA Web 2026 donde el compositor puede quedar brevemente oculto entre ciclos.
+            if self._is_compose_visible():
+                self.log(f"[WAIT-HEADER] Compose visible, aceptando chat.")
                 return True
             self.page.wait_for_timeout(140)
         return False
@@ -1571,6 +1569,22 @@ class BrowserWorker(threading.Thread):
                     return True
                 if self._wait_header(contact, timeout_ms=3000):
                     self.log(f"Contacto '{contact}' abierto via teclado (header).")
+                    return True
+                # V8.9.9: WA Web 2026 puede mantener el panel de busqueda como overlay
+                # sobre el chat recien abierto, ocultando el compositor. Escape descarta
+                # el overlay; si el chat ya estaba abierto, el compositor queda visible.
+                # Si no habia chat, Escape cierra el panel y Strategy 2 opera sobre la
+                # lista de chats recientes (donde el contacto suele estar visible).
+                try:
+                    page.keyboard.press("Escape")
+                    page.wait_for_timeout(400)
+                except Exception:
+                    pass
+                if self._is_compose_visible():
+                    self.log(f"Contacto '{contact}' confirmado via teclado (compose post-Escape).")
+                    return True
+                if self._wait_header(contact, timeout_ms=1500):
+                    self.log(f"Contacto '{contact}' confirmado via teclado (header post-Escape).")
                     return True
                 self.log("[KEYBOARD-1] Sin confirmacion. Probando mouse.click.")
             except Exception:
