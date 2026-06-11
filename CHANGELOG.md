@@ -1,5 +1,11 @@
 # Changelog
 
+## [v8.9.8] — 2026-06-10
+### Fixed
+- **Scrollbar en campo de mensaje:** cada `tk.Text` de mensaje ahora tiene su propia scrollbar vertical. El campo se envuelve en un Frame contenedor (`_is_section=True`) con la scrollbar a la derecha; el borde visible es del Frame, no del Text.
+- **Mouse wheel en campo de mensaje:** el handler `_on_mousewheel` del canvas ahora verifica `isinstance(event.widget, tk.Text)` y retorna sin hacer scroll del canvas, dejando que el widget Text maneje su propio scroll con la rueda del mouse.
+- **Theming de Scrollbar en modo oscuro:** `_theme_children` ahora incluye el caso `Scrollbar` aplicando `bg`, `troughcolor` y `activebackground` del tema activo.
+
 ## [v8.9.7] — 2026-06-10
 ### Fixed
 - **Campo de mensaje más grande:** aumentado `height=2` → `height=4` en los `tk.Text` de mensaje para mejor usabilidad y espacio de escritura.

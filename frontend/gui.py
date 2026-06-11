@@ -167,6 +167,13 @@ def _theme_children(widget, th: dict, area: str = "main") -> None:
                                     insertbackground=th["text"],
                                     selectbackground=th["btn_p"],
                                     selectforeground="#FFFFFF")
+                elif cls == "Scrollbar":
+                    child.configure(
+                        bg=th.get("bg_panel", th["bg_card"]),
+                        troughcolor=th.get("bg_main", "#22272E"),
+                        activebackground=th.get("btn_p_h", "#46954A"),
+                        relief=tk.FLAT, bd=0,
+                    )
                 elif cls == "Canvas":
                     child.configure(bg=th["bg_main"], highlightthickness=0)
                 elif cls == "Listbox":
@@ -493,8 +500,11 @@ class WhatsAppSchedulerApp:
         # Expandir el frame interno al ancho del canvas cuando la ventana se redimensiona
         canvas.bind("<Configure>", lambda event: canvas.itemconfig(_mf_win_id, width=event.width))
 
-        # Scroll con rueda del mouse: activo solo mientras el cursor está sobre el canvas
+        # Scroll con rueda del mouse: activo solo mientras el cursor está sobre el canvas.
+        # Si el foco está sobre un tk.Text se omite para que el widget maneje su propio scroll.
         def _on_mousewheel(event):
+            if isinstance(event.widget, tk.Text):
+                return
             canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
         canvas.bind("<Enter>", lambda e: canvas.bind_all("<MouseWheel>", _on_mousewheel))
         canvas.bind("<Leave>", lambda e: canvas.unbind_all("<MouseWheel>"))
@@ -1056,18 +1066,30 @@ class WhatsAppSchedulerApp:
             badge_inner.pack(fill="x")
             # badge_frame NO se hace pack aquí; se controla con _on_auto_toggle
 
+            # Container con borde visible y scrollbar propia para el campo de mensaje
+            msg_frame = tk.Frame(
+                sub, relief=tk.FLAT,
+                highlightthickness=1, highlightbackground="#C8CDD1", highlightcolor=_C_PRIMARY,
+            )
+            msg_frame._is_section = True  # _theme_children actualiza highlightbackground del borde
+            msg_frame.pack(fill=tk.X, padx=5, pady=(0, 2))
+
+            msg_scroll = tk.Scrollbar(msg_frame, orient=tk.VERTICAL, width=14)
+            msg_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+
             text_message = tk.Text(
-                sub, height=4, width=50, takefocus=True,
+                msg_frame, height=4, width=50, takefocus=True,
                 font=_F_BODY, relief=tk.FLAT,
-                highlightthickness=1, highlightbackground="#C8CDD1",
-                highlightcolor=_C_PRIMARY,
+                highlightthickness=0,
                 insertbackground=_C_TEXT,
                 padx=4, pady=4,
+                yscrollcommand=msg_scroll.set,
             )
+            msg_scroll.configure(command=text_message.yview)
+            text_message.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
             text_message.insert(tk.END, pre.get("message", ""))
-            text_message.pack(fill=tk.X, padx=5, pady=(0, 2))
 
-            def _scroll_into_view(event, _c=self._canvas, _w=text_message):
+            def _scroll_into_view(event, _c=self._canvas, _w=msg_frame):
                 _c.update_idletasks()
                 bbox = _c.bbox("all")
                 if not bbox or bbox[3] <= 0:
