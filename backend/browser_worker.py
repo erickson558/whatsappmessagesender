@@ -1502,6 +1502,8 @@ class BrowserWorker(threading.Thread):
         for sel in (
             "footer div[contenteditable='true']",
             "footer [data-testid='conversation-compose-box-input']",
+            "#main div[contenteditable='true'][data-lexical-editor='true']",
+            "#main [data-testid='conversation-compose-box-input'][contenteditable='true']",
             "#main footer",
         ):
             try:
@@ -1509,6 +1511,39 @@ class BrowserWorker(threading.Thread):
                     return True
             except Exception:
                 pass
+        return False
+
+    def _is_search_active(self) -> bool:
+        """True si el panel de busqueda de WA Web tiene resultados visibles.
+
+        Se usa para detectar si el panel de busqueda esta activo como overlay
+        antes de retornar de _select_contact y antes de escribir en _send_message,
+        de modo que podamos descartarlo con Escape sin cerrar el chat.
+        """
+        page = self.page
+        if page is None:
+            return False
+        for sel in (
+            "[data-testid='search-composition-list']",
+            "[data-testid='default-search-results']",
+            "[data-testid='pane-side'] [role='listbox']",
+        ):
+            try:
+                if page.locator(sel).first.is_visible(timeout=200):
+                    return True
+            except Exception:
+                continue
+        for sel in (
+            "[data-testid='chat-list-search'] div[contenteditable='true']",
+            '[aria-label="Search input textbox"]',
+        ):
+            try:
+                node = page.locator(sel).first
+                if node.is_visible(timeout=200):
+                    if (node.inner_text(timeout=200) or "").strip():
+                        return True
+            except Exception:
+                continue
         return False
 
     def _wait_header(self, contact: str, timeout_ms: int = 9000) -> bool:
@@ -1565,9 +1600,25 @@ class BrowserWorker(threading.Thread):
                 page.wait_for_timeout(1200)
                 # Confirmacion rapida via compose box (mas fiable que header en WA Web 2026)
                 if self._is_compose_visible():
+                    # V8.10.0: descartar panel de busqueda si sigue activo como overlay.
+                    # En WA Web 2026 el panel puede persistir sobre el chat recien abierto;
+                    # si no lo descartamos aqui, _send_message recibe el Enter como
+                    # "abrir resultado de busqueda" en lugar de "enviar mensaje".
+                    if self._is_search_active():
+                        try:
+                            page.keyboard.press("Escape")
+                            page.wait_for_timeout(350)
+                        except Exception:
+                            pass
                     self.log(f"Contacto '{contact}' abierto via teclado (compose).")
                     return True
                 if self._wait_header(contact, timeout_ms=3000):
+                    if self._is_search_active():
+                        try:
+                            page.keyboard.press("Escape")
+                            page.wait_for_timeout(350)
+                        except Exception:
+                            pass
                     self.log(f"Contacto '{contact}' abierto via teclado (header).")
                     return True
                 # V8.9.9: WA Web 2026 puede mantener el panel de busqueda como overlay
@@ -1912,6 +1963,15 @@ class BrowserWorker(threading.Thread):
             return False
 
         page = self.page
+        # V8.10.0: descartar panel de busqueda si sigue activo antes de escribir.
+        # En WA Web 2026 el panel intercepta el Enter del envio si no se descarta.
+        try:
+            if self._is_search_active():
+                self.log("[SEND] Panel de busqueda activo detectado — descartando con Escape.")
+                page.keyboard.press("Escape")
+                page.wait_for_timeout(350)
+        except Exception:
+            pass
         normalized_text = re.sub(r"\r\n|\r", "\n", text).strip()
 
         try:
@@ -1953,6 +2013,7 @@ class BrowserWorker(threading.Thread):
 
             sent = False
             # Intentar con data-testid primero (mas confiable en WA Web 2025)
+            # force=True: ignora overlays que puedan cubrir el boton (WA Web 2026)
             for _send_sel in (
                 "button[data-testid='send']",
                 "span[data-testid='send']",
@@ -1961,7 +2022,7 @@ class BrowserWorker(threading.Thread):
                 try:
                     _sb = page.locator(_send_sel).first
                     if _sb.is_visible(timeout=600):
-                        _sb.click(timeout=1500)
+                        _sb.click(timeout=1500, force=True)
                         sent = True
                         break
                 except Exception:
@@ -1971,8 +2032,33 @@ class BrowserWorker(threading.Thread):
                 try:
                     send_btn = page.get_by_role("button", name=re.compile(r"Enviar|Send", re.I)).first
                     if send_btn.is_visible(timeout=700):
-                        send_btn.click(timeout=1500)
+                        send_btn.click(timeout=1500, force=True)
                         sent = True
+                except Exception:
+                    pass
+            # V8.10.0: fallback via JS click — llega directo al boton ignorando overlays
+            if not sent:
+                try:
+                    _js_clicked = page.evaluate("""
+                        () => {
+                            const selectors = [
+                                "button[data-testid='send']",
+                                "span[data-testid='send']",
+                                "[data-testid='compose-btn-send']",
+                                "button[aria-label='Send']",
+                                "button[aria-label='Enviar']",
+                                "button[aria-label='Enviar mensaje']"
+                            ];
+                            for (const sel of selectors) {
+                                const btn = document.querySelector(sel);
+                                if (btn) { btn.click(); return true; }
+                            }
+                            return false;
+                        }
+                    """)
+                    if _js_clicked:
+                        sent = True
+                        self.log("[SEND] Boton enviado via JS click fallback.")
                 except Exception:
                     pass
             if not sent:

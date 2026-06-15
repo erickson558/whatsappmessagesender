@@ -1,5 +1,15 @@
 # Changelog
 
+## [v8.9.10] — 2026-06-15
+### Fixed
+- **Mensaje no enviado tras encontrar contacto — panel de búsqueda WA Web 2026:** bug crítico donde `_select_contact` retornaba `True` (chat abierto vía compose visible) sin descartar el panel de búsqueda activo. Al invocar `_send_message` a continuación, el panel de búsqueda interceptaba el `Enter` del envío interpretándolo como "abrir resultado" en lugar de "enviar mensaje". El mensaje nunca se enviaba aunque el contacto había sido encontrado correctamente.
+  - **`_is_search_active()`** — nuevo método que detecta si el panel de búsqueda tiene resultados visibles o texto activo.
+  - **`_select_contact` Strategy 1** — al confirmar chat abierto (compose visible o header), se llama `_is_search_active()` y si está activo, se presiona `Escape` antes de retornar `True`.
+  - **`_send_message`** — al inicio del envío (después de `_ensure_chat_target`), se verifica y descarta el panel de búsqueda con `Escape` si está activo.
+  - **Botón send** — `click()` ahora usa `force=True` para ignorar overlays que pudieran cubrir el botón en WA Web 2026.
+  - **Fallback JS send** — nuevo intento via `document.querySelector(...).click()` como último recurso antes de caer al `Enter` por teclado.
+  - **`_is_compose_visible()`** — añadidos selectores `#main div[contenteditable='true'][data-lexical-editor='true']` y `#main [data-testid='conversation-compose-box-input']` que no dependen del tag `<footer>` para mayor compatibilidad con posibles cambios de estructura de WA Web 2026.
+
 ## [v8.9.9] — 2026-06-11
 ### Fixed
 - **Selección de contacto — overlay WA Web 2026:** en versiones recientes de WhatsApp Web 2026, el panel de búsqueda puede permanecer activo como overlay sobre el chat recién abierto, ocultando el compositor y haciendo que `_is_compose_visible()` devuelva False aunque el chat ya estuviera abierto. Se agrega un paso `Escape` post-Strategy1 en `_select_contact` para descartar el overlay y re-verificar compose/header antes de continuar con estrategias más invasivas. Si no había chat abierto, Escape cierra el panel y Strategy 2 opera directamente sobre la lista de chats recientes.
