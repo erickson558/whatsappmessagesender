@@ -1131,19 +1131,26 @@ class BrowserWorker(threading.Thread):
         page = self.page
         if page is None:
             return None
-        # FIX V8.5.0: cerrar cualquier panel o resultado de busqueda abierto antes
-        # de enfocar el campo global. Sin esto, el campo puede estar en modo "busqueda
-        # activa" y los resultados del tipo anterior contaminan la nueva busqueda.
-        try:
-            page.keyboard.press("Escape")
-            page.wait_for_timeout(150)
-        except Exception:
-            pass
+        # FIX V8.9.11: Escape solo si hay resultados de busqueda activos.
+        # Antes se presionaba incondicionalmente (V8.5.0). El problema: tras
+        # _clear_global_search el campo queda enfocado; 60s despues Escape colapsa
+        # el panel de busqueda de WA Web 2026 y todos los selectores fallan hasta
+        # que el usuario interactua manualmente. Solo presionar si _is_search_active()
+        # confirma que hay resultados visibles que limpiar.
+        if self._is_search_active():
+            try:
+                page.keyboard.press("Escape")
+                page.wait_for_timeout(250)
+            except Exception:
+                pass
         for selector in (
             '[aria-label="Search input textbox"]',
             "[data-testid='chat-list-search'] div[contenteditable='true']",
             "div[data-testid='chat-list-search']",
             "div[aria-label='Search input textbox']",
+            'div[aria-label="Search or start new chat"]',
+            'div[aria-label="Buscar o empezar nuevo chat"]',
+            'div[aria-label="Buscar o empezar un nuevo chat"]',
         ):
             try:
                 root = page.locator(selector).first

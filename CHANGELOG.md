@@ -1,5 +1,10 @@
 # Changelog
 
+## [v8.9.11] — 2026-06-15
+### Fixed
+- **`_focus_global_search` — Escape condicional (WA Web 2026):** el Escape al inicio de `_focus_global_search` se presionaba incondicionalmente (fix V8.5.0). El problema: tras `_clear_global_search()` el cuadro de búsqueda queda enfocado; ~60 s después `_focus_global_search` presionaba Escape, colapsando el panel de búsqueda de WA Web 2026 y dejando todos los selectores fallidos en cada reintento. El efecto: el envío de mensajes a un contacto nuevo (después de cambiar de chat) fallaba con "No se pudo abrir el cuadro de búsqueda" hasta que el usuario interactuaba manualmente. **Fix:** Escape ahora sólo se presiona si `_is_search_active()` confirma que hay resultados de búsqueda activos visibles. Tiempo de espera extendido de 150 ms → 250 ms cuando Escape sí se ejecuta.
+- **Selectores de búsqueda WA Web 2026:** agregados `div[aria-label="Search or start new chat"]`, `div[aria-label="Buscar o empezar nuevo chat"]` y `div[aria-label="Buscar o empezar un nuevo chat"]` al listado de selectores en `_focus_global_search` para cubrir variaciones de idioma/versión de WA Web 2026.
+
 ## [v8.9.10] — 2026-06-15
 ### Fixed
 - **Mensaje no enviado tras encontrar contacto — panel de búsqueda WA Web 2026:** bug crítico donde `_select_contact` retornaba `True` (chat abierto vía compose visible) sin descartar el panel de búsqueda activo. Al invocar `_send_message` a continuación, el panel de búsqueda interceptaba el `Enter` del envío interpretándolo como "abrir resultado" en lugar de "enviar mensaje". El mensaje nunca se enviaba aunque el contacto había sido encontrado correctamente.
