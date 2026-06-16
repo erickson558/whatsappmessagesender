@@ -1,5 +1,10 @@
 # Changelog
 
+## [v8.9.12] — 2026-06-16
+### Fixed
+- **Verificación de envío lenta — WA Web 2026 (`_send_message`):** `_verify_message_sent` y `_wait_outgoing_increment` usan el selector `div.message-out` que ya no existe en WA Web 2026. Ambos siempre hacían timeout (9 s + 6 s = **15 s perdidos por envío**), retrasando cada mensaje ~15 s innecesariamente. El efecto práctico: un mensaje programado a las 8:59 llegaba a las 9:00:18 en lugar de ~9:00:03. **Fix:** se agrega `_wait_composer_cleared(4 s)` como primera verificación (detecta el envío en ~1-2 s en cuanto el compositor queda vacío); los timeouts de los fallbacks se reducen de 9 s/6 s a 4 s/2 s.
+- **Selectores de mensajes salientes — WA Web 2026:** `_count_outgoing_messages` y `_verify_message_sent` ahora incluyen `[data-id^='true_']` (WA Web 2026 prefija `true_` en el `data-id` de mensajes salientes), `[class*='message-out']` (match parcial de clase) y `[data-id^='true_'] span[dir='ltr']` como selectores prioritarios antes del fallback clásico `div.message-out`.
+
 ## [v8.9.11] — 2026-06-15
 ### Fixed
 - **`_focus_global_search` — Escape condicional (WA Web 2026):** el Escape al inicio de `_focus_global_search` se presionaba incondicionalmente (fix V8.5.0). El problema: tras `_clear_global_search()` el cuadro de búsqueda queda enfocado; ~60 s después `_focus_global_search` presionaba Escape, colapsando el panel de búsqueda de WA Web 2026 y dejando todos los selectores fallidos en cada reintento. El efecto: el envío de mensajes a un contacto nuevo (después de cambiar de chat) fallaba con "No se pudo abrir el cuadro de búsqueda" hasta que el usuario interactuaba manualmente. **Fix:** Escape ahora sólo se presiona si `_is_search_active()` confirma que hay resultados de búsqueda activos visibles. Tiempo de espera extendido de 150 ms → 250 ms cuando Escape sí se ejecuta.

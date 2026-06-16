@@ -1859,11 +1859,18 @@ class BrowserWorker(threading.Thread):
         if page is None:
             return 0
         for selector in (
+            # WA Web 2026: data-id comienza con 'true_' en mensajes salientes
+            "[data-id^='true_']",
+            "[data-testid='msg-container'][data-id^='true_']",
+            # Versiones anteriores (clase CSS)
             "div.message-out",
             "[data-testid='msg-container'].message-out",
+            "[class*='message-out']",
         ):
             try:
-                return int(page.locator(selector).count())
+                count = int(page.locator(selector).count())
+                if count > 0:
+                    return count
             except Exception:
                 continue
         return 0
@@ -1901,9 +1908,16 @@ class BrowserWorker(threading.Thread):
         text = self._normalized_text(text)
         while time.time() < end:
             for selector in (
+                # WA Web 2026: data-id^='true_' para mensajes salientes
+                "[data-id^='true_'] span.selectable-text",
+                "[data-id^='true_'] [data-lexical-text='true']",
+                "[data-id^='true_'] span[dir='ltr']",
+                # Selectores clasicos (versiones anteriores)
                 "div.message-out span.selectable-text",
                 "div.message-out [data-testid='msg-text'] span",
                 "div.message-out [data-lexical-text='true']",
+                "[class*='message-out'] span.selectable-text",
+                "[class*='message-out'] [data-lexical-text='true']",
             ):
                 try:
                     nodes = page.locator(selector).all()
@@ -2092,12 +2106,23 @@ class BrowserWorker(threading.Thread):
                     except Exception:
                         page.keyboard.press("Enter")
 
-            if self._verify_message_sent(normalized_text, timeout_ms=9000):
+            # V8.9.12: Verificacion 1 — compositor limpiado (rapida, siempre funciona en WA Web 2026).
+            # _verify_message_sent y _wait_outgoing_increment usan 'div.message-out' que no existe
+            # en WA Web 2026; ambas siempre hacian timeout (9s + 6s = 15s perdidos por envio).
+            # _wait_composer_cleared detecta el envio en ~1-2s sin depender de clases CSS.
+            if sent and self._wait_composer_cleared(node, container, timeout_ms=4000):
+                self.log(f"Mensaje enviado a '{contact}' (compositor limpiado tras envio).")
+                self._clear_global_search()
+                return True
+
+            # Verificacion 2 — texto en mensajes salientes (fallback; timeouts reducidos).
+            if self._verify_message_sent(normalized_text, timeout_ms=4000):
                 self.log(f"Mensaje enviado a '{contact}'.")
                 self._clear_global_search()
                 return True
 
-            if self._wait_outgoing_increment(outgoing_before, timeout_ms=6000):
+            # Verificacion 3 — incremento de salientes.
+            if self._wait_outgoing_increment(outgoing_before, timeout_ms=2000):
                 self.log(f"Mensaje enviado a '{contact}' (verificacion por incremento de mensajes salientes).")
                 self._clear_global_search()
                 return True
