@@ -1,7 +1,7 @@
 # Especificacion del Proyecto: WhatsApp Message Sender
 
 > Documento vivo de Spec-Driven Development. Actualizar con cada cambio de version mayor o menor.
-> Version del documento alineada con: `VERSION` — **v8.8.0**
+> Version del documento alineada con: `VERSION` — **v8.9.13**
 
 ---
 
@@ -26,7 +26,7 @@ Usuarios individuales o de pequenas empresas en Windows que necesitan automatiza
 
 | Campo | Valor |
 |---|---|
-| Version | **v8.8.0** |
+| Version | **v8.9.13** |
 | Rama principal | `main` |
 | Plataforma soportada | Windows 10 / 11 (x64) |
 | Python requerido (dev) | 3.12 |
@@ -46,31 +46,28 @@ Usuarios individuales o de pequenas empresas en Windows que necesitan automatiza
 | `scripts/bump_version.py` | Sincronizacion de version entre `VERSION`, `config.example.json` y `config.json` |
 | `build_exe.ps1` | Compilacion local del ejecutable |
 
-### Capacidades actuales (v8.7.0)
+### Capacidades actuales (v8.9.13)
 
 - Hasta **4 grupos de trabajo** con hasta **4 mensajes cada uno** (16 mensajes configurables en total).
-- Modos de repeticion por mensaje: Ninguno, Diario, Semanal (dias seleccionables), Mensual.
-- Navegadores soportados: Opera, Brave, Chrome, Edge.
-- Reconexion automatica al browser tras cierre o hibernacion del sistema.
-- Watchdog de hibernacion (`SleepWatchdog`) que reprograma mensajes vencidos al despertar.
-- Lock de entrega (`_delivery_lock`) que evita envios al contacto equivocado bajo concurrencia.
-- Splash screen con barra de progreso en el arranque.
-- Soporte multi-idioma inicial (base implementada en v8.2.0).
-- Boton de donacion (v8.2.0).
+- Modos de repeticion por mensaje: Ninguno, Cada minuto, Cada hora, Diariamente, Semanalmente (dias seleccionables) y Mensualmente.
+- Navegadores soportados: Opera, Brave, Chrome y Edge.
+- Reconexion automatica al browser tras cierre, QR expirado o hibernacion del sistema.
+- Watchdog de hibernacion (`SleepWatchdog`) que reconecta el browser y reprograma mensajes vencidos al despertar.
+- Lock de entrega (`_delivery_lock`) que serializa `select_contact + send_message`.
+- Confirmacion estricta del destinatario antes de escribir: el worker solo envia si puede verificar el contacto objetivo y ve el compositor listo.
+- Splash screen con barra de progreso real durante el arranque.
+- Idiomas disponibles: espanol, ingles y portugues.
+- Tema claro/oscuro persistente, auto-label opcional por mensaje y mejoras de usabilidad en campos largos (scroll propio, auto-scroll al focus).
+- Boton de donacion visible en la UI y en el menu contextual.
 - Logs rotativos con rutas absolutas, tolerantes al path de lanzamiento del `.exe`.
 - **[V8.5.0]** Keepalive detecta QR/sesion-expirada ademas de desconexion CDP.
 - **[V8.5.0]** Mensajes repetitivos no se abandonan permanentemente al agotar retries: se reprograman con cooldown de 5 min.
-- **[V8.5.0]** Cuadro de busqueda de contacto: Escape previo + triple_click para limpieza robusta.
-- **[V8.5.0]** Instancia Playwright validada antes de reusar (deteccion de instancia stale tras dias de uso).
-- **[V8.5.0]** Skill `/diagnose-bot` para diagnosticar y verificar el estado de la conexion WhatsApp.
-- **[V8.6.0]** Seleccion de contacto robusta para WA Web 2025: nuevos selectores del panel de busqueda (`search-composition-list`, `default-search-results`), soporte `role='row'`/`role='listitem'`, espera de resultados extendida a 900 ms, nuevos selectores de header y fallback de teclado ArrowDown+Enter si los clicks no confirman apertura del chat.
-- **[V8.6.1]** Fix bug raiz seleccion de contacto: `_click_contact_js` con JavaScript DOM-walking hasta 12 niveles (independiente de data-testid); `_get_header_name` con fallback JS via `querySelector + TreeWalker`; `_select_contact` usa JS-click como estrategia primaria antes de Playwright.
-- **[V8.7.0]** Fix critico click-revert en WA Web 2026: `_click_contact_js` devuelve coordenadas del elemento (getBoundingClientRect); `_select_contact` combina JS-click + `page.mouse.click(cx, cy)` para disparar la cadena completa de eventos de puntero que WA Web requiere para no revertir el chat al estado de busqueda. Selectores WA 2026: `[aria-label="Chats"]`, `[data-testid="chat-list"]`. Performance startup: eliminado sleep artificial del splash (~0.8s). Refactor: variable muerta `_we_started`, guardia doble en `_maybe_keepalive`, lambda duplicada en `_verify_message_sent`.
-- **[V8.7.1]** Fix spans secundarios: `isSecondarySpan()` en JS descarta spans en subtitulos de grupos antes de intentar el click. `_click_contact_js` devuelve SOLO coordenadas sin ejecutar ningun click JS (previene desplazamiento por animacion).
-- **[V8.7.2]** Fix RuntimeError en `_schedule_message`: captura `(tk.TclError, RuntimeError)` al llamar `root.after()` desde hilo de fondo. Metodo `_is_compose_visible()` nuevo para detectar chat abierto via footer contenteditable (mas fiable que header). `_wait_header` con fallback de compose.
-- **[V8.7.3]** Fix definitivo click-revert: estrategia teclado como primaria (ArrowDown+Enter), sin `blur()` previo al mouse.click (el blur ocultaba el panel de resultados antes de que el click llegara), `_is_compose_visible()` como confirmacion rapida inmediata (1200ms) en lugar de esperar 9000ms para header detection. Guard compose antes de Playwright fallback. Nuevo skill `/debug-wa-click` para diagnosticar fallas del flujo de seleccion de contacto.
-- **[V8.7.4]** Fix critico send_message: `_clear_global_search()` se llamaba ANTES de escribir el mensaje y presionaba Escape que en WA Web 2026 cierra el chat. Soluciones: (1) `_clear_global_search()` verifica `_is_compose_visible()` antes de presionar Escape; (2) la llamada dentro de `_send_message` se mueve a DESPUES del envio exitoso; (3) `_ensure_chat_target()` acepta `_is_compose_visible()` como confirmacion valida de chat abierto evitando re-seleccion innecesaria del contacto. Agente `python-desktop-engineer` y skills `diagnose-bot`/`verify-selectors` actualizados con patrones V8.7.4.
-- **[V8.8.0]** GUI overhaul de visibilidad y usabilidad: (1) cursor invisible corregido — `_theme_children()` ahora aplica `bg_card`/`text`/`insertbackground` a campos `tk.Text` (antes aplicaba colores de log); (2) `tk.Entry` y `tk.Text` de bloques de mensaje creados con `insertbackground`, `highlightthickness=1` y `highlightcolor` para cursor y foco visibles en ambos temas; (3) `Checkbutton` manejado en `_theme_children()` con `selectcolor` tematizado; (4) todos los labels de bloque usan `_F_BODY`/`_F_SMALL` (Segoe UI); (5) botones "Hoy" y "Detener repetición" estilizados con `_C_ACCENT`; (6) `frame.columnconfigure(weight=1)` para expansion proporcional de los bloques; (7) clave `"border"` en `_THEMES` para color de borde consistente entre temas.
+- **[V8.6.x–V8.7.x]** Reescritura progresiva de la seleccion de contacto para WA Web 2025/2026: estrategia teclado-first, localizacion JS de coordenadas reales, filtros de spans secundarios y fallbacks de header/compose.
+- **[V8.8.0]** Overhaul visual de la GUI: correcciones de cursor/foco, tipografia consistente y bordes tematizados.
+- **[V8.9.4–V8.9.8]** Mejoras de ergonomia en el editor: rueda del mouse, scroll automatico al focus, scrollbars dedicadas y refinamiento del modo oscuro.
+- **[V8.9.10]** Deteccion y descarte del panel de busqueda activo para que no intercepte el envio.
+- **[V8.9.12]** Verificacion de envio acelerada para WA Web 2026 via compositor vacio y selectores actualizados de mensajes salientes.
+- **[V8.9.13]** Endurecimiento del flujo de target-chat: `compose visible` ya no se acepta como evidencia suficiente del destinatario correcto; se agregan pruebas unitarias de regresion para cruce de contactos.
 
 ---
 
@@ -128,6 +125,7 @@ Usuarios individuales o de pequenas empresas en Windows que necesitan automatiza
 - Un `config.json` corrupto no debe crashear la app: se genera backup `.bak` y se reinicia con valores por defecto.
 - Ante desconexion del browser, la app debe intentar reconexion automatica (`relaunch_on_disconnect: true`).
 - El `_delivery_lock` garantiza que dos hilos no ejecuten `select_contact`+`send_message` de forma concurrente.
+- El browser worker no debe enviar un mensaje si no logra confirmar que el chat activo corresponde al contacto objetivo.
 - Mensajes repetitivos cuya fecha quedo en el pasado por hibernacion se reprograman automaticamente al proximo ciclo futuro.
 - Los logs utilizan rutas absolutas para funcionar correctamente independientemente del directorio de lanzamiento del `.exe`.
 
@@ -160,43 +158,36 @@ Usuarios individuales o de pequenas empresas en Windows que necesitan automatiza
 
 Las siguientes funcionalidades estan identificadas para versiones futuras. Ninguna tiene fecha comprometida.
 
-### 6.1 Boton "Comprame una cerveza"
+### 6.1 Cambio de Idioma Sin Reinicio
 
-**Descripcion:** Agregar un boton de donacion voluntaria con el texto "Comprame una cerveza" en la interfaz, que abra el navegador del sistema con el enlace de PayPal del autor.
+**Descripcion:** Permitir que el selector de idioma aplique todos los textos de la interfaz sin requerir reiniciar la aplicacion.
 
-**Enlace:** `https://www.paypal.com/donate/?hosted_button_id=ZABFRXC2P3JQN`
+**Estado actual:** el idioma se persiste en `config.json`, pero el usuario debe reiniciar para ver la UI completa en el nuevo idioma.
 
 **Criterios de aceptacion:**
 
-- El boton es visible en la ventana principal sin ocupar espacio prominente (ubicacion secundaria: pie de ventana o menu Ayuda).
-- Al hacer clic abre el enlace en el navegador predeterminado del sistema (`webbrowser.open`).
-- El boton respeta el idioma activo: el texto cambia segun el idioma seleccionado (p. ej. "Buy me a beer" en ingles).
-- No interfiere con la logica de envio ni con el ciclo de vida del browser worker.
-- El boton es visible en ambos estados de la app: browser conectado y desconectado.
-
-**Notas de implementacion:**
-
-- Usar `webbrowser.open(url)` de la stdlib; no abrir con el browser controlado por Playwright.
-- El enlace debe estar en una constante nombrada en el modulo de configuracion o en un archivo de constantes dedicado.
+- El cambio de idioma desde la GUI recarga labels, botones, tabs, mensajes de estado y menu contextual sin reiniciar.
+- Si falta una clave para el idioma activo, se usa espanol como fallback sin crashear.
+- El cambio no rompe timers, hilos en ejecucion ni bindings de la ventana.
+- El idioma seleccionado sigue persistido en `config.json`.
 
 ---
 
 ### 6.2 Soporte Multi-Idiomas Expandido
 
-**Descripcion:** Expandir el sistema de internacionalizacion (i18n) introducido en v8.2.0 para cubrir todos los textos de la interfaz y soportar idiomas adicionales.
+**Descripcion:** Consolidar el sistema de internacionalizacion actual para que todos los catalogos sean mas faciles de mantener y extender.
 
 **Idiomas objetivo (prioridad):**
 
-1. Espanol (es) — idioma base, ya parcialmente implementado
-2. Ingles (en) — segunda prioridad
-3. Portugues (pt) — tercera prioridad
+1. Espanol (es) — idioma base
+2. Ingles (en)
+3. Portugues (pt)
 
 **Criterios de aceptacion:**
 
-- El 100 % de los textos visibles al usuario (etiquetas, botones, mensajes de error, logs en GUI, splash) estan externalizados en archivos de traduccion (`.json` o `.po`/`.mo`).
-- El cambio de idioma desde la GUI recarga los textos sin necesidad de reiniciar la aplicacion.
-- Si falta una clave de traduccion para el idioma activo, se usa el texto en espanol como fallback sin crashear.
-- La seleccion de idioma se persiste en `config.json`.
+- El 100 % de los textos visibles al usuario siguen centralizados y auditables desde un unico modulo/catálogo.
+- La incorporacion de un nuevo idioma no requiere tocar la logica de negocio del scheduler ni del browser worker.
+- Los mensajes de log dirigidos a usuario y las etiquetas del splash quedan alineados con el idioma activo.
 - Los archivos de traduccion son editables por colaboradores sin conocimiento de Python.
 - El `.exe` incluye todos los archivos de traduccion empaquetados correctamente por PyInstaller.
 

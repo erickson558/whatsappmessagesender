@@ -1553,24 +1553,23 @@ class BrowserWorker(threading.Thread):
                 continue
         return False
 
-    def _wait_header(self, contact: str, timeout_ms: int = 9000) -> bool:
-        """Espera hasta que el header de WA Web confirme que el chat del contacto esta abierto.
+    def _wait_header(self, contact: str, timeout_ms: int = 9000, require_compose: bool = False) -> bool:
+        """Espera hasta poder confirmar el contacto objetivo en el chat abierto.
 
-        Si los selectores del header no pueden leer el nombre (WA Web actualizo su estructura),
-        acepta el chat como correcto si el compose box es visible: es mejor enviar el mensaje
-        que regresar al modo busqueda, que cierra el chat definitivamente.
-        V8.9.9: deteccion de compose en 1-pass (antes 2-pass) para mayor velocidad en WA Web 2026.
+        La seguridad del envio depende de verificar el destinatario real; un
+        compositor visible por si solo no garantiza que el chat activo sea el
+        correcto. Cuando require_compose=True, ademas exige que el compositor
+        este visible antes de dar el chat por listo para escribir.
         """
+        page = self.page
+        if page is None:
+            return False
         end_time = time.time() + (timeout_ms / 1000.0)
         while time.time() < end_time:
             if self._is_in_chat(contact):
-                return True
-            # V8.9.9: compose visible => chat abierto. Sin 2-pass para capturar apertura
-            # en WA Web 2026 donde el compositor puede quedar brevemente oculto entre ciclos.
-            if self._is_compose_visible():
-                self.log(f"[WAIT-HEADER] Compose visible, aceptando chat.")
-                return True
-            self.page.wait_for_timeout(140)
+                if not require_compose or self._is_compose_visible():
+                    return True
+            page.wait_for_timeout(140)
         return False
 
     def _select_contact(self, contact: str) -> bool:
@@ -1581,8 +1580,16 @@ class BrowserWorker(threading.Thread):
             return False
 
         if self._is_in_chat(contact):
-            self.log(f"Contacto '{contact}' ya estaba activo.")
-            return True
+            if self._is_search_active():
+                try:
+                    page.keyboard.press("Escape")
+                    page.wait_for_timeout(350)
+                except Exception:
+                    pass
+            if self._wait_header(contact, timeout_ms=1200, require_compose=True):
+                self.log(f"Contacto '{contact}' ya estaba activo.")
+                return True
+            self.log(f"Contacto '{contact}' coincide en header/composer, pero el compositor no quedo listo.")
 
         try:
             search = self._focus_global_search()
@@ -1605,44 +1612,26 @@ class BrowserWorker(threading.Thread):
                 page.wait_for_timeout(400)
                 page.keyboard.press("Enter")
                 page.wait_for_timeout(1200)
-                # Confirmacion rapida via compose box (mas fiable que header en WA Web 2026)
-                if self._is_compose_visible():
-                    # V8.10.0: descartar panel de busqueda si sigue activo como overlay.
-                    # En WA Web 2026 el panel puede persistir sobre el chat recien abierto;
-                    # si no lo descartamos aqui, _send_message recibe el Enter como
-                    # "abrir resultado de busqueda" en lugar de "enviar mensaje".
+                if self._wait_header(contact, timeout_ms=3000, require_compose=True):
                     if self._is_search_active():
                         try:
                             page.keyboard.press("Escape")
                             page.wait_for_timeout(350)
                         except Exception:
                             pass
-                    self.log(f"Contacto '{contact}' abierto via teclado (compose).")
-                    return True
-                if self._wait_header(contact, timeout_ms=3000):
-                    if self._is_search_active():
-                        try:
-                            page.keyboard.press("Escape")
-                            page.wait_for_timeout(350)
-                        except Exception:
-                            pass
-                    self.log(f"Contacto '{contact}' abierto via teclado (header).")
-                    return True
-                # V8.9.9: WA Web 2026 puede mantener el panel de busqueda como overlay
-                # sobre el chat recien abierto, ocultando el compositor. Escape descarta
-                # el overlay; si el chat ya estaba abierto, el compositor queda visible.
-                # Si no habia chat, Escape cierra el panel y Strategy 2 opera sobre la
-                # lista de chats recientes (donde el contacto suele estar visible).
+                    if self._wait_header(contact, timeout_ms=1200, require_compose=True):
+                        self.log(f"Contacto '{contact}' abierto via teclado.")
+                        return True
+                    self.log(f"[KEYBOARD-1] '{contact}' coincide pero el compositor no quedo listo tras descartar overlay.")
+                # WA Web 2026 puede mantener el panel de busqueda como overlay sobre el chat;
+                # descartar con Escape y re-verificar contra el contacto objetivo.
                 try:
                     page.keyboard.press("Escape")
                     page.wait_for_timeout(400)
                 except Exception:
                     pass
-                if self._is_compose_visible():
-                    self.log(f"Contacto '{contact}' confirmado via teclado (compose post-Escape).")
-                    return True
-                if self._wait_header(contact, timeout_ms=1500):
-                    self.log(f"Contacto '{contact}' confirmado via teclado (header post-Escape).")
+                if self._wait_header(contact, timeout_ms=1500, require_compose=True):
+                    self.log(f"Contacto '{contact}' confirmado via teclado post-Escape.")
                     return True
                 self.log("[KEYBOARD-1] Sin confirmacion. Probando mouse.click.")
             except Exception:
@@ -1660,24 +1649,21 @@ class BrowserWorker(threading.Thread):
                 if cx and cy:
                     try:
                         page.mouse.click(cx, cy)
-                        # Detectar apertura rapido: si compose aparece en <1200ms, confirmar
-                        # SIN esperar el header (que en WA Web 2026 puede tardar mas).
-                        page.wait_for_timeout(1200)
-                        if self._is_compose_visible():
-                            self.log(f"Contacto '{contact}' abierto via mouse.click (compose).")
+                        if self._wait_header(contact, timeout_ms=2200, require_compose=True):
+                            self.log(f"Contacto '{contact}' abierto via mouse.click.")
                             return True
                     except Exception as _me:
                         self.log(f"[MOUSE-CLICK] Error: {_me}")
-                if self._wait_header(contact, timeout_ms=5000):
-                    self.log(f"Contacto '{contact}' abierto via mouse.click (header).")
+                if self._wait_header(contact, timeout_ms=5000, require_compose=True):
+                    self.log(f"Contacto '{contact}' abierto via mouse.click (espera extendida).")
                     return True
                 self.log("[MOUSE-CLICK] Sin confirmacion tras mouse.click.")
 
             # V8.7.3 — Estrategia 3: candidatos Playwright + teclado de respaldo.
             # Solo llegar aqui si las dos estrategias anteriores fallaron y el compose
             # NO esta visible (para no interrumpir un chat que ya este abierto).
-            if self._is_compose_visible():
-                self.log(f"Compose visible al inicio de fallback — retornando True.")
+            if self._wait_header(contact, timeout_ms=1200, require_compose=True):
+                self.log(f"Contacto '{contact}' ya estaba listo al entrar al fallback.")
                 return True
 
             # Fallback Playwright: click directo en candidatos rankeados
@@ -1713,10 +1699,7 @@ class BrowserWorker(threading.Thread):
                     except Exception:
                         continue
                 page.wait_for_timeout(1000)
-                if self._is_compose_visible():
-                    self.log(f"Contacto seleccionado por coincidencia LIKE (compose): {name}")
-                    return True
-                if self._wait_header(contact, timeout_ms=4000):
+                if self._wait_header(contact, timeout_ms=4000, require_compose=True):
                     self.log(f"Contacto seleccionado por coincidencia LIKE: {name}")
                     return True
 
@@ -1727,17 +1710,14 @@ class BrowserWorker(threading.Thread):
                     page.wait_for_timeout(400)
                     page.keyboard.press("Enter")
                     page.wait_for_timeout(1000)
-                    if self._is_compose_visible():
-                        self.log(f"Contacto seleccionado via teclado final (compose): {contact}")
-                        return True
-                    if self._wait_header(contact, timeout_ms=4000):
+                    if self._wait_header(contact, timeout_ms=4000, require_compose=True):
                         self.log(f"Contacto seleccionado via teclado (ArrowDown+Enter): {contact}")
                         return True
                 except Exception:
                     pass
 
             self._clear_global_search()
-            if self._wait_header(contact, timeout_ms=5000):
+            if self._wait_header(contact, timeout_ms=5000, require_compose=True):
                 self.log(f"Contacto seleccionado (confirmacion post-click): {contact}")
                 return True
             raise TimeoutError("No se pudo confirmar apertura del chat objetivo.")
@@ -1777,17 +1757,18 @@ class BrowserWorker(threading.Thread):
         if not contact:
             return False
         for idx in range(attempts):
-            # V8.7.4: _is_compose_visible() como fallback primario — mas fiable que
-            # _is_in_chat en WA Web 2026 donde los selectores del header cambian.
-            # Si compose esta visible, asumimos que el chat ya esta abierto.
-            if self._is_in_chat(contact) or self._is_compose_visible():
+            # Para enviar con seguridad exigimos destinatario confirmado + compositor listo.
+            if self._wait_header(contact, timeout_ms=350, require_compose=True):
                 return True
             self.log(
                 f"[ensure_chat_target] actual='{self._get_active_chat_from_composer()}', objetivo='{contact}', reintento {idx + 1}/{attempts}"
             )
             if not self._select_contact(contact):
                 time.sleep(0.2)
-        return self._is_in_chat(contact) or self._is_compose_visible()
+                continue
+            if self._wait_header(contact, timeout_ms=1500, require_compose=True):
+                return True
+        return self._wait_header(contact, timeout_ms=500, require_compose=True)
 
     def _get_composer_for_contact(self):
         """Localiza el elemento contenteditable del compositor de mensajes en el footer.

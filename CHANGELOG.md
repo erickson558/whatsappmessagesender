@@ -1,5 +1,10 @@
 # Changelog
 
+## [v8.9.13] — 2026-06-24
+### Fixed
+- **Cruce de contactos por falso positivo de chat listo (`_wait_header`, `_select_contact`, `_ensure_chat_target`):** el flujo aceptaba `compose visible` como señal suficiente de que el chat objetivo estaba abierto. En WA Web eso solo prueba que hay *algún* chat activo; si el nombre del destinatario no se había confirmado todavía, el mensaje podía salir al chat anterior. **Fix:** `_wait_header` ahora valida siempre que el chat activo coincida con el contacto pedido y, cuando se va a escribir, exige además compositor visible. `_select_contact` y `_ensure_chat_target` fueron endurecidos para no retornar `True` hasta confirmar destinatario + compositor listo.
+- **Cobertura de regresión:** se agregan pruebas unitarias para bloquear el escenario donde un chat ajeno mantiene el compositor visible y antes se aceptaba erróneamente como chat correcto.
+
 ## [v8.9.12] — 2026-06-16
 ### Fixed
 - **Verificación de envío lenta — WA Web 2026 (`_send_message`):** `_verify_message_sent` y `_wait_outgoing_increment` usan el selector `div.message-out` que ya no existe en WA Web 2026. Ambos siempre hacían timeout (9 s + 6 s = **15 s perdidos por envío**), retrasando cada mensaje ~15 s innecesariamente. El efecto práctico: un mensaje programado a las 8:59 llegaba a las 9:00:18 en lugar de ~9:00:03. **Fix:** se agrega `_wait_composer_cleared(4 s)` como primera verificación (detecta el envío en ~1-2 s en cuanto el compositor queda vacío); los timeouts de los fallbacks se reducen de 9 s/6 s a 4 s/2 s.
