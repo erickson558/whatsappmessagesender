@@ -1,7 +1,7 @@
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(8, 9, 13, 0),
-    prodvers=(8, 9, 13, 0),
+    filevers=(8, 9, 14, 0),
+    prodvers=(8, 9, 14, 0),
     mask=0x3F,
     flags=0x0,
     OS=0x40004,
@@ -17,12 +17,12 @@ VSVersionInfo(
           [
             StringStruct('CompanyName', 'whatsappmessagesender'),
             StringStruct('FileDescription', 'Programador de Mensajes WhatsApp'),
-            StringStruct('FileVersion', '8.9.13'),
+            StringStruct('FileVersion', '8.9.14'),
             StringStruct('InternalName', 'enviar_whatsapp'),
             StringStruct('LegalCopyright', 'Apache License 2.0'),
             StringStruct('OriginalFilename', 'enviar_whatsapp.exe'),
             StringStruct('ProductName', 'Programador de Mensajes WhatsApp'),
-            StringStruct('ProductVersion', '8.9.13')
+            StringStruct('ProductVersion', '8.9.14')
           ]
         )
       ]

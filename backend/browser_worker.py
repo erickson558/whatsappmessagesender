@@ -1702,6 +1702,22 @@ class BrowserWorker(threading.Thread):
                 if self._wait_header(contact, timeout_ms=4000, require_compose=True):
                     self.log(f"Contacto seleccionado por coincidencia LIKE: {name}")
                     return True
+                # FIX: si WhatsApp muestra el chat con un nombre mas corto o distinto
+                # al configurado (apodo, nombre de empuje truncado), _like_match(contact, ...)
+                # exige TODOS los tokens configurados y nunca empareja aunque el chat
+                # correcto SI se abrio (fuimos nosotros quienes clickeamos 'name' segundos
+                # atras). Verificar autoconsistencia contra el nombre EXACTO del candidato
+                # que acabamos de clickear -- en lugar de aflojar la validacion generica
+                # contra 'contact' -- evita reabrir el bug de cruce de contactos que
+                # V8.9.13 corrigio (un homonimo de un chat ya abierto ya no pasaria esta
+                # verificacion, porque 'name' es el candidato que nosotros mismos rankeamos
+                # y clickeamos, no una coincidencia parcial generica contra cualquier chat activo).
+                if _like_match(name, self._get_active_chat_from_composer()) and self._is_compose_visible():
+                    self.log(
+                        f"[WARN] Contacto '{contact}' confirmado por nombre parcial en pantalla "
+                        f"('{name}') - WhatsApp muestra un nombre distinto/mas corto que el configurado."
+                    )
+                    return True
 
             # Fallback final de teclado — solo si compose NO esta visible
             if not self._is_compose_visible():
@@ -1760,8 +1776,15 @@ class BrowserWorker(threading.Thread):
             # Para enviar con seguridad exigimos destinatario confirmado + compositor listo.
             if self._wait_header(contact, timeout_ms=350, require_compose=True):
                 return True
+            active = self._get_active_chat_from_composer()
+            # Diagnostico: si el contacto configurado tiene tokens que jamas aparecen
+            # en el nombre que WhatsApp muestra (apodo/nombre corto), _like_match nunca
+            # empareja y los reintentos son inutiles; loguear el detalle facilita
+            # detectar ese caso en logaplicacion*.txt sin adivinar desde un TimeoutError generico.
+            missing = set(_tokens(contact)) - set(_tokens(active))
             self.log(
-                f"[ensure_chat_target] actual='{self._get_active_chat_from_composer()}', objetivo='{contact}', reintento {idx + 1}/{attempts}"
+                f"[ensure_chat_target] actual='{active}', objetivo='{contact}', "
+                f"tokens_faltantes={sorted(missing) or 'ninguno'}, reintento {idx + 1}/{attempts}"
             )
             if not self._select_contact(contact):
                 time.sleep(0.2)

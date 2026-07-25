@@ -1477,15 +1477,17 @@ class WhatsAppSchedulerApp:
             ampm_val = widgets.listbox_ampm[idx].get().strip()
 
             if not hour_str or not minute_str or not ampm_val:
+                # FIX: un slot invalido dentro de la pestana ya no descarta los
+                # demas mensajes validos del mismo grupo (antes: return []).
                 self.update_status(self.i18n.t("status_no_time", n=idx + 1, group=group_name))
-                return []
+                continue
 
             try:
                 hour_val = int(hour_str)
                 minute_val = int(minute_str)
             except ValueError:
                 self.update_status(self.i18n.t("status_no_time", n=idx + 1, group=group_name))
-                return []
+                continue
 
             if ampm_val.upper() == "PM" and hour_val != 12:
                 hour_val += 12
@@ -1497,7 +1499,7 @@ class WhatsAppSchedulerApp:
                 scheduled_datetime = scheduled_date.replace(hour=hour_val, minute=minute_val)
             except ValueError:
                 self.update_status(self.i18n.t("status_bad_date", n=idx + 1, group=group_name))
-                return []
+                continue
 
             # Convertir el valor mostrado en el combobox al valor canónico (español) para
             # guardar internamente. Siempre se compara y almacena en canónico.
@@ -1651,26 +1653,37 @@ class WhatsAppSchedulerApp:
 
             runnable = []
             for item in items:
+                # Saltar items sin repeticion que ya fueron enviados (tienen last_sent).
+                # Pueden aparecer en este loop tras hibernacion si el grupo fue
+                # reprogramado por otros items con repeticion. Evita reenvio duplicado.
+                if item.get("repeat", "Ninguno") == "Ninguno" and item.get("last_sent") is not None:
+                    continue
+
+                item_dt = item.get("datetime")
+                due = not (isinstance(item_dt, datetime) and item_dt > datetime.now() + timedelta(seconds=30))
                 days = item.get("days") or []
-                if days and datetime.now().weekday() not in days:
+
+                # FIX: el filtro de dias solo se evalua (y reprograma) cuando el item
+                # ya esta due. Antes se evaluaba sin importar el estado del item en
+                # CADA disparo del contenedor compartido (varios items del mismo
+                # contacto+hora pueden convivir en un mismo container): si un item
+                # hermano con repeticion mas frecuente disparaba el timer, este item
+                # -aunque su propia fecha aun fuera futura- podia terminar con su
+                # "datetime" sobreescrito por datetime.now()+dias, perdiendo la hora
+                # configurada. Ahora los items no vencidos se reprograman intactos.
+                if due and days and datetime.now().weekday() not in days:
                     delta = 1
                     while (datetime.now() + timedelta(days=delta)).weekday() not in days:
                         delta += 1
-                    new_time = datetime.now() + timedelta(days=delta)
+                    anchor_time = item_dt.time() if isinstance(item_dt, datetime) else datetime.now().time()
+                    new_time = datetime.combine((datetime.now() + timedelta(days=delta)).date(), anchor_time)
                     item["datetime"] = new_time
                     self.update_status(self.i18n.t("status_day_skip", new_time=new_time))
                     self._schedule_message(item)
+                elif not due:
+                    self._schedule_message(item)
                 else:
-                    # Saltar items sin repeticion que ya fueron enviados (tienen last_sent).
-                    # Pueden aparecer en runnable tras hibernacion si el grupo fue
-                    # reprogramado por otros items con repeticion. Evita reenvio duplicado.
-                    if item.get("repeat", "Ninguno") == "Ninguno" and item.get("last_sent") is not None:
-                        continue
-                    item_dt = item.get("datetime")
-                    if isinstance(item_dt, datetime) and item_dt > datetime.now() + timedelta(seconds=30):
-                        self._schedule_message(item)
-                    else:
-                        runnable.append(item)
+                    runnable.append(item)
 
             if not runnable:
                 return
@@ -1728,7 +1741,8 @@ class WhatsAppSchedulerApp:
                 delta = 1
                 while (datetime.now() + timedelta(days=delta)).weekday() not in msg["days"]:
                     delta += 1
-                new_time = datetime.now() + timedelta(days=delta)
+                anchor_time = msg["datetime"].time() if isinstance(msg.get("datetime"), datetime) else datetime.now().time()
+                new_time = datetime.combine((datetime.now() + timedelta(days=delta)).date(), anchor_time)
                 msg["datetime"] = new_time
                 self.update_status(self.i18n.t("status_day_skip", new_time=new_time))
                 self._schedule_message(msg)

@@ -1,7 +1,7 @@
 # Especificacion del Proyecto: WhatsApp Message Sender
 
 > Documento vivo de Spec-Driven Development. Actualizar con cada cambio de version mayor o menor.
-> Version del documento alineada con: `VERSION` — **v8.9.13**
+> Version del documento alineada con: `VERSION` — **v8.9.14**
 
 ---
 
@@ -26,7 +26,7 @@ Usuarios individuales o de pequenas empresas en Windows que necesitan automatiza
 
 | Campo | Valor |
 |---|---|
-| Version | **v8.9.13** |
+| Version | **v8.9.14** |
 | Rama principal | `main` |
 | Plataforma soportada | Windows 10 / 11 (x64) |
 | Python requerido (dev) | 3.12 |
@@ -46,7 +46,7 @@ Usuarios individuales o de pequenas empresas en Windows que necesitan automatiza
 | `scripts/bump_version.py` | Sincronizacion de version entre `VERSION`, `config.example.json` y `config.json` |
 | `build_exe.ps1` | Compilacion local del ejecutable |
 
-### Capacidades actuales (v8.9.13)
+### Capacidades actuales (v8.9.14)
 
 - Hasta **4 grupos de trabajo** con hasta **4 mensajes cada uno** (16 mensajes configurables en total).
 - Modos de repeticion por mensaje: Ninguno, Cada minuto, Cada hora, Diariamente, Semanalmente (dias seleccionables) y Mensualmente.
@@ -68,6 +68,7 @@ Usuarios individuales o de pequenas empresas en Windows que necesitan automatiza
 - **[V8.9.10]** Deteccion y descarte del panel de busqueda activo para que no intercepte el envio.
 - **[V8.9.12]** Verificacion de envio acelerada para WA Web 2026 via compositor vacio y selectores actualizados de mensajes salientes.
 - **[V8.9.13]** Endurecimiento del flujo de target-chat: `compose visible` ya no se acepta como evidencia suficiente del destinatario correcto; se agregan pruebas unitarias de regresion para cruce de contactos.
+- **[V8.9.14]** Cada mensaje de un grupo de trabajo se programa de forma independiente: una fila invalida (hora/fecha vacia o mal formada) ya no descarta el resto de mensajes validos de la misma pestana. El filtro de dias de la semana en mensajes de grupo solo se aplica a items ya vencidos y preserva la hora configurada al reprogramar (antes podia sobreescribir la fecha/hora de un item hermano aun no vencido). `_select_contact` agrega una verificacion de autoconsistencia acotada para contactos cuyo nombre en pantalla es mas corto que el configurado (apodo/push-name truncado), sin reabrir el bug de cruce de contactos de V8.9.13.
 
 ---
 
@@ -125,7 +126,9 @@ Usuarios individuales o de pequenas empresas en Windows que necesitan automatiza
 - Un `config.json` corrupto no debe crashear la app: se genera backup `.bak` y se reinicia con valores por defecto.
 - Ante desconexion del browser, la app debe intentar reconexion automatica (`relaunch_on_disconnect: true`).
 - El `_delivery_lock` garantiza que dos hilos no ejecuten `select_contact`+`send_message` de forma concurrente.
-- El browser worker no debe enviar un mensaje si no logra confirmar que el chat activo corresponde al contacto objetivo.
+- El browser worker no debe enviar un mensaje si no logra confirmar que el chat activo corresponde al contacto objetivo (o, en su defecto, al candidato especifico que la propia app clickeo en la busqueda — autoconsistencia).
+- Un mensaje invalido (fecha/hora vacia o mal formada) dentro de un grupo de trabajo NUNCA debe impedir que los demas mensajes validos de esa misma pestana se programen.
+- El filtro de dias de la semana solo se evalua sobre items ya vencidos; al reprogramar por dia no permitido se preserva la hora configurada del mensaje, nunca la hora actual del sistema.
 - Mensajes repetitivos cuya fecha quedo en el pasado por hibernacion se reprograman automaticamente al proximo ciclo futuro.
 - Los logs utilizan rutas absolutas para funcionar correctamente independientemente del directorio de lanzamiento del `.exe`.
 

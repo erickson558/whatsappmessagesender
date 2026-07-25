@@ -1,5 +1,7 @@
 # Skill: /diagnose-bot — Diagnóstico y Reparación de Conexión WhatsApp
 
+> **Alcance:** este skill audita la capa de navegador/conexión (`backend/browser_worker.py`: keepalive, search-box, playwright stale). Si el síntoma es "los mensajes de un grupo de trabajo específico no se envían" o "un mensaje con repetición+días parece enviarse a la hora incorrecta", ese bug vive en la capa de PROGRAMACIÓN (`frontend/gui.py`) — usa `/validate-scheduling` en su lugar (o además, si no está claro en qué capa está el problema).
+
 ## Cuando usar esta skill
 - La app dejó de enviar mensajes sin razón aparente
 - Necesitas verificar si el browser worker está activo y conectado a WhatsApp

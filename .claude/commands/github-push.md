@@ -22,15 +22,15 @@ Argumento opcional: $ARGUMENTS (pista para el mensaje de commit)
 4. Crear commit con Conventional Commits:
    git commit -m "tipo(scope): descripcion en espanol"
 
-5. Push: git push origin main
+5. Push: si la rama actual no es `main` y ya tiene un PR abierto (`gh pr list --head <rama-actual>`), push a esa misma rama (`git push origin <rama-actual>`) para actualizar el PR. Solo usar `git push origin main` si el trabajo se hizo directamente en `main` o el usuario pidio explicitamente mergear/publicar (recordar que cada push a `main` dispara `release.yml`: build + GitHub Release publico).
 
-6. Reportar archivos commiteados y URL del commit
+6. Reportar archivos commiteados y URL del commit (o del PR si se actualizo una rama de feature)
 
 ## Cuenta GitHub
 - Usuario: erickson558
 - Repo: https://github.com/erickson558/whatsappmessagesender
 - Autenticado via: gh CLI
-- Rama: main
+- Rama principal: main (push a main dispara release automatico -- confirmar con el usuario si no fue pedido)
 
 ## Reglas
 - NUNCA --no-verify ni --force
