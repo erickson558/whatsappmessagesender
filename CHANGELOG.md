@@ -1,5 +1,8 @@
 # Changelog
 
+## Nota de operaciones — 2026-09-03
+El PR #1 (`codex/fix-contact-target-validation`), que contenía los commits de v8.9.13 y v8.9.14, quedó en estado DRAFT desde 2026-06-25 sin mergearse a `main`. Durante ese período `main` y el release público permanecieron en v8.9.12, sin los fixes de envío de mensajes (validación de contacto y programación de grupos), reproduciendo para los usuarios el síntoma "selecciona el contacto pero no envía el mensaje" que ya estaba corregido en el código pero nunca llegó a publicarse. Se mergeó el PR a `main`, se recompiló localmente y se publicó el release `v8.9.14` vía `release.yml`. No hay cambios de código en esta entrada — es un evento de despliegue.
+
 ## [v8.9.14] — 2026-07-25
 ### Fixed
 - **Mensajes de un grupo de trabajo completo descartados por una sola fila invalida (`_schedule_messages_group`):** si una fila con "Enviar" activo tenia hora/minuto/AM-PM vacios o una fecha invalida, la funcion hacia `return []` de inmediato, descartando TODOS los mensajes ya validados de esa misma pestana (no solo la fila con problemas). Efecto real: un grupo de trabajo entero (p. ej. "Grupo 2") podia dejar de enviar absolutamente nada por culpa de una unica fila mal configurada, sin que el resto de mensajes validos de esa pestana llegaran a programarse. **Fix:** la fila invalida ahora se omite (`continue`) y las demas filas validas del mismo grupo se programan con normalidad.
