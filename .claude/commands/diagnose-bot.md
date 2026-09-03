@@ -13,6 +13,8 @@
 
 ## Lo que hace esta skill
 
+0. **[V8.9.14] Verificación de release vs. código** — Antes de leer una sola línea de código, correr `gh pr list` y `git log --oneline main -5` vs. `git log --oneline <rama-actual> -5`. Un bug que "ya está corregido en el código" no está corregido para el usuario si el fix vive en una rama/PR que nunca se mergeó a `main` (y por tanto nunca se compiló ni se publicó como release). Caso real: el PR #1 (`codex/fix-contact-target-validation`) quedó en DRAFT ~2 meses con los fixes V8.9.13/V8.9.14 de envío sin mergear; `main` y el release público siguieron en V8.9.12 todo ese tiempo. Si `gh pr list` muestra un PR abierto/draft con commits de tipo `fix(send)` o similar que no están en `main`, ese es el sospechoso #1 — mergearlo (con confirmación del usuario) antes de buscar un bug nuevo.
+
 1. **Diagnóstico de código** — Revisa los archivos clave del proyecto en busca de síntomas:
    - `browser_worker.py` → estado del keepalive, recovery, search-box clearing
    - `whatsapp_backend.py` → timeouts, lock de entrega

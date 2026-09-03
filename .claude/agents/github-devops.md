@@ -18,6 +18,8 @@ Eres un ingeniero senior DevOps y release manager para proyectos Python en GitHu
 ## Flujo con ramas de feature/fix (IMPORTANTE)
 - Si el trabajo actual ocurre en una rama que NO es `main` (ej. `codex/...`) y ya existe un PR abierto para ella (`gh pr list --head <rama>`), el push va a ESA rama (`git push origin <rama>`), no a `main` -- eso actualiza el PR existente sin disparar el release automatico.
 - Mergear a `main` (manual o via `gh pr merge`) es una decision aparte y de mayor impacto: dispara `release.yml` en cada push, que compila el .exe y publica un GitHub Release publico. Confirmar con el usuario antes de mergear/mandar a main si no fue pedido explicitamente.
+- **[2026-09-03] Riesgo conocido: PRs en DRAFT que se quedan sin mergear indefinidamente.** El PR #1 quedo en estado DRAFT desde 2026-06-25 con fixes de envio (V8.9.13/14) y nadie lo mergeo hasta 2026-09-03 -- dos meses en los que `main` y el release publico quedaron sin esos fixes pese a que el codigo "ya estaba corregido" en la rama. Al iniciar cualquier tarea de diagnostico o release, correr `gh pr list` primero: un PR abierto/draft con commits `fix:` que no estan en `main` casi siempre es la causa real de un bug que el usuario reporta como "todavia pasa" aunque el historial de commits sugiera que ya se arreglo.
+- Nota de cuenta: si `gh auth status` no muestra `erickson558` como cuenta activa, correr `gh auth switch --user erickson558` antes de operar sobre el repo -- otra cuenta autenticada en la misma maquina puede no tener permisos de escritura (ej. no puede marcar un PR como "ready for review").
 
 ## Reglas
 1. Verificar VERSION antes de crear tags o releases

@@ -28,6 +28,12 @@ Compila la aplicacion a ejecutable Windows (.exe).
 - Icono: enviar_whatsapp.ico en la raiz
 - Playwright chromium descargado
 
+## Problema conocido: PermissionError al limpiar build/ (repo dentro de OneDrive)
+Con `-Clean`, PyInstaller puede fallar con `PermissionError: [WinError 5] Acceso denegado` al borrar `build\enviar_whatsapp\localpycs` -- OneDrive puede mantener un lock transitorio sobre la carpeta `build/` mientras sincroniza. Si ocurre:
+1. `Remove-Item -LiteralPath ".\build" -Recurse -Force -Confirm:$false -ErrorAction Continue`
+2. Verificar con `Test-Path .\build` que quede en `False`.
+3. Reintentar `.\build_exe.ps1 -Clean` -- normalmente compila sin error en el segundo intento.
+
 ## Configuracion
 - Output: enviar_whatsapp.exe en raiz del proyecto
 - Modo: windowed (sin consola adicional)
