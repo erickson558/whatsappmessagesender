@@ -41,6 +41,8 @@ La aplicacion permite al usuario definir hasta 16 mensajes programados organizad
 - Los checkboxes de dias solo son relevantes para repeticion semanal.
 - Al programar, si la fecha/hora ya paso y no hay repeticion configurada, el mensaje se omite con aviso en el log.
 - Si la fecha ya paso pero hay repeticion activa, se calcula automaticamente la proxima ocurrencia valida y se reprograma.
+- Cada bloque de mensaje se valida y programa de forma independiente: un bloque con "Enviar" activo pero hora/fecha invalida se omite (con aviso en el log) SIN afectar a los demas bloques validos de la misma pestana. **[FIX V8.9.14]** Antes, un unico bloque invalido descartaba silenciosamente TODOS los mensajes ya validados de ese grupo.
+- Cuando el filtro de dias de la semana reprograma un mensaje de grupo por caer en un dia no permitido, preserva la hora configurada del mensaje; solo avanza la fecha al proximo dia habilitado. **[FIX V8.9.14]** Antes, este filtro tambien se evaluaba sobre items de grupo aun no vencidos cuando un item hermano disparaba el contenedor compartido, sobreescribiendo su fecha/hora con el momento actual del sistema.
 - El boton "Detener repeticion" en cada bloque cancela la repeticion de ese mensaje especifico.
 - El boton "Set hoy" rellena la fecha del bloque con la fecha actual.
 - Un contador de generacion (`_schedule_generation`) invalida callbacks pendientes de ciclos anteriores, previniendo dobles envios tras re-programacion.
@@ -72,6 +74,7 @@ La automatizacion del navegador se realiza mediante Playwright conectado via Chr
 - La conexion CDP se reintenta hasta `cdp_retries` veces (por defecto 3) con timeout de `cdp_timeout` ms (por defecto 90000 ms) por intento.
 - El worker detecta y enlaza automaticamente la pestana que contiene WhatsApp Web (`web.whatsapp.com`).
 - La seleccion de contacto realiza busqueda por texto en WhatsApp Web usando algoritmo de tokenizacion y cobertura de terminos para tolerar coincidencias parciales y caracteres especiales.
+- Si WhatsApp muestra el chat bajo un nombre mas corto que el configurado (apodo o "push name" truncado) y la validacion estricta por tokens nunca puede satisfacerse, `_select_contact` acepta el envio solo si el chat activo coincide con el nombre EXACTO del candidato que la propia app clickeo en la busqueda (autoconsistencia), nunca contra el nombre configurado completo ni contra un umbral generico de similitud. **[FIX V8.9.14]**
 - El envio de mensaje escribe el texto en el campo de entrada y simula el envio (Enter), con verificacion posterior.
 - El worker mantiene la conexion activa mediante keepalives periodicos cada `keepalive_interval_sec` segundos (por defecto 60 s).
 - Si el navegador se desconecta y `relaunch_on_disconnect` esta habilitado, el worker relanza el browser automaticamente.

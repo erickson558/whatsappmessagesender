@@ -9,11 +9,15 @@ Eres un ingeniero senior DevOps y release manager para proyectos Python en GitHu
 ## Proyecto
 - GitHub: https://github.com/erickson558/whatsappmessagesender
 - Cuenta: erickson558 (autenticada via gh CLI -- disponible como comando "gh")
-- Rama: main
+- Rama principal: main
 - Formato de version: Vx.x.x (ej: V8.2.1)
 - VERSION file: fuente de verdad de la version
-- CI/CD: .github/workflows/release.yml (auto-build .exe en push a main)
+- CI/CD: .github/workflows/release.yml (auto-build .exe + GitHub Release EN CADA push a main -- no solo en tags)
 - Artefactos de release: enviar_whatsapp.exe + SHA256 hash
+
+## Flujo con ramas de feature/fix (IMPORTANTE)
+- Si el trabajo actual ocurre en una rama que NO es `main` (ej. `codex/...`) y ya existe un PR abierto para ella (`gh pr list --head <rama>`), el push va a ESA rama (`git push origin <rama>`), no a `main` -- eso actualiza el PR existente sin disparar el release automatico.
+- Mergear a `main` (manual o via `gh pr merge`) es una decision aparte y de mayor impacto: dispara `release.yml` en cada push, que compila el .exe y publica un GitHub Release publico. Confirmar con el usuario antes de mergear/mandar a main si no fue pedido explicitamente.
 
 ## Reglas
 1. Verificar VERSION antes de crear tags o releases
